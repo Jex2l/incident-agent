@@ -10,6 +10,7 @@ paths at request time:
   - LATENCY_MS=<n>             -> added to every request, for throttling/
                                    latency-type faults
 """
+import asyncio
 import os
 import sys
 import time
@@ -40,8 +41,12 @@ SERVICE = "cart"
 @app.middleware("http")
 async def metrics_middleware(request, call_next):
     start = time.time()
-    if LATENCY_MS:
-        time.sleep(LATENCY_MS / 1000.0)
+    # Health/readiness probes must stay fast regardless of injected latency -
+    # otherwise the readiness probe itself times out, the pod never goes
+    # Ready, the Service never routes traffic to it, and the fault never
+    # shows up in any request metric at all.
+    if LATENCY_MS and request.url.path not in ("/healthz", "/readyz"):
+        await asyncio.sleep(LATENCY_MS / 1000.0)
     path = request.url.path.split("/")[1] or "root"
     status = 500
     try:

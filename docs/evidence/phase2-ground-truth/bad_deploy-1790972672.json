@@ -1,0 +1,16 @@
+{
+  "run_id": "bad_deploy-1790972672",
+  "scenario": "bad_deploy",
+  "component": "cart",
+  "root_cause_label": "bad_deploy",
+  "namespace": "incident-agent",
+  "injected_at": "2026-10-02T20:24:32.490168+00:00",
+  "reset_at": "2026-10-02T20:27:12.459057+00:00",
+  "status": "resolved",
+  "details": {
+    "broken_image": "incident-agent/cart:broken-tag-never-built",
+    "expected_alerts": [
+      "DeploymentUnavailable"
+    ]
+  }
+}

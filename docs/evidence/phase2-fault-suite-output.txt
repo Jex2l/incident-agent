@@ -1,0 +1,72 @@
+
+======================================================================
+Running fault scenario: oom_kill
+======================================================================
+[fault] ground truth recorded: evals/runs/oom_kill-1790972631.json
+[oom_kill] injected (run oom_kill-1790972631)
+[oom_kill] waiting up to 5 min for ['PodOOMKilled']...
+[oom_kill] alert FIRED: PodOOMKilled
+[fault] ground truth marked resolved: evals/runs/oom_kill-1790972631.json
+[oom_kill] reset, cart restored to healthy
+
+======================================================================
+Running fault scenario: bad_deploy
+======================================================================
+[fault] ground truth recorded: evals/runs/bad_deploy-1790972672.json
+[bad_deploy] injected (run bad_deploy-1790972672)
+[bad_deploy] waiting up to 5 min for ['DeploymentUnavailable']...
+[bad_deploy] alert FIRED: DeploymentUnavailable
+[fault] ground truth marked resolved: evals/runs/bad_deploy-1790972672.json
+[bad_deploy] reset, cart restored to healthy manifest
+
+======================================================================
+Running fault scenario: cpu_throttle
+======================================================================
+[fault] ground truth recorded: evals/runs/cpu_throttle-1790972832.json
+[cpu_throttle] injected (run cpu_throttle-1790972832)
+[cpu_throttle] waiting up to 5 min for ['HighLatency']...
+[cpu_throttle] alert FIRED: HighLatency
+[fault] ground truth marked resolved: evals/runs/cpu_throttle-1790972832.json
+[cpu_throttle] reset, cart restored to healthy
+
+======================================================================
+Running fault scenario: kafka_lag
+======================================================================
+[fault] ground truth recorded: evals/runs/kafka_lag-1790973015.json
+[kafka_lag] injected (run kafka_lag-1790973015)
+[kafka_lag] waiting up to 7 min for ['KafkaConsumerLagHigh']...
+[kafka_lag] alert FIRED: KafkaConsumerLagHigh
+[fault] ground truth marked resolved: evals/runs/kafka_lag-1790973015.json
+[kafka_lag] reset, kafka-consumer restored to healthy
+
+======================================================================
+Running fault scenario: crash_loop
+======================================================================
+[fault] ground truth recorded: evals/runs/crash_loop-1790973257.json
+[crash_loop] injected (run crash_loop-1790973257)
+[crash_loop] waiting up to 5 min for ['CrashLoopBackOff']...
+[crash_loop] alert FIRED: CrashLoopBackOff
+[fault] ground truth marked resolved: evals/runs/crash_loop-1790973257.json
+[crash_loop] reset, cart restored to healthy
+
+======================================================================
+Running fault scenario: dependency_down
+======================================================================
+[fault] ground truth recorded: evals/runs/dependency_down-1790973358.json
+[dependency_down] injected (run dependency_down-1790973358)
+[dependency_down] waiting up to 5 min for ['DeploymentUnavailable']...
+[dependency_down] alert FIRED: DeploymentUnavailable
+[fault] ground truth marked resolved: evals/runs/dependency_down-1790973358.json
+[dependency_down] reset, cache and cart restored to healthy
+
+======================================================================
+== Fault injection summary ==
+======================================================================
+  [ok] oom_kill (41s)
+  [ok] bad_deploy (160s)
+  [ok] cpu_throttle (183s)
+  [ok] kafka_lag (242s)
+  [ok] crash_loop (101s)
+  [ok] dependency_down (175s)
+
+6/6 scenarios triggered their alert and reset cleanly

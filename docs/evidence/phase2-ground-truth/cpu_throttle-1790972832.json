@@ -1,0 +1,17 @@
+{
+  "run_id": "cpu_throttle-1790972832",
+  "scenario": "cpu_throttle",
+  "component": "cart",
+  "root_cause_label": "cpu_throttling",
+  "namespace": "incident-agent",
+  "injected_at": "2026-10-02T20:27:12.466137+00:00",
+  "reset_at": "2026-10-02T20:30:15.105263+00:00",
+  "status": "resolved",
+  "details": {
+    "cpu_limit": "80m",
+    "latency_ms": 1200,
+    "expected_alerts": [
+      "HighLatency"
+    ]
+  }
+}

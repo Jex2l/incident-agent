@@ -36,9 +36,12 @@ spec:
     - name: incident-agent.pods
       rules:
         - alert: PodOOMKilled
+          # `and` requires identical label sets by default; last_terminated_reason
+          # carries a "reason" label that restarts_total doesn't, so without
+          # ignoring(reason) the two sides never match and this never fires.
           expr: |
             increase(kube_pod_container_status_restarts_total{namespace="incident-agent"}[10m]) > 0
-            and
+            and ignoring(reason)
             kube_pod_container_status_last_terminated_reason{namespace="incident-agent", reason="OOMKilled"} == 1
           for: 0m
           labels: {severity: critical}

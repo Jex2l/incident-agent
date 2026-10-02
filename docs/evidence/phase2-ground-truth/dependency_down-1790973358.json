@@ -1,0 +1,16 @@
+{
+  "run_id": "dependency_down-1790973358",
+  "scenario": "dependency_down",
+  "component": "cache",
+  "root_cause_label": "dependency_down",
+  "namespace": "incident-agent",
+  "injected_at": "2026-10-02T20:35:58.338150+00:00",
+  "reset_at": "2026-10-02T20:38:52.992113+00:00",
+  "status": "resolved",
+  "details": {
+    "affected_component": "cart",
+    "expected_alerts": [
+      "DeploymentUnavailable"
+    ]
+  }
+}

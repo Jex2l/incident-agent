@@ -66,11 +66,28 @@ def main():
     consumer = connect()
     print(f"[kafka-consumer] consuming {KAFKA_BROKERS}/{KAFKA_TOPIC} group={GROUP_ID} "
           f"delay_ms={CONSUMER_DELAY_MS} stopped={CONSUMER_STOPPED}")
+
+    # kafka-python-ng only assigns partitions after poll() completes the
+    # join-group/sync-group handshake. A single poll() call isn't always
+    # enough - after repeated membership churn in the group (pods cycling
+    # through fault injection), the handshake can take several rounds to
+    # settle. Retry until assignment() is non-empty, otherwise the
+    # CONSUMER_STOPPED branch below never polls at all and report_lag()
+    # can never compute anything, even after the fault is injected on an
+    # already-running pod.
+    join_deadline = time.time() + 60
+    while not consumer.assignment() and time.time() < join_deadline:
+        consumer.poll(timeout_ms=3000)
+    if not consumer.assignment():
+        print("[kafka-consumer] WARNING: no partition assignment after 60s of joining")
+    else:
+        print(f"[kafka-consumer] joined group, assigned: {consumer.assignment()}")
+
     last_lag_check = 0.0
     while True:
         if CONSUMER_STOPPED:
             # Stay connected (so the consumer group / pod still shows "ready"), but
-            # never poll, so lag grows just like a hung consumer would in production.
+            # never poll again, so lag grows just like a hung consumer would in production.
             time.sleep(LAG_POLL_INTERVAL_S)
             report_lag(consumer)
             continue

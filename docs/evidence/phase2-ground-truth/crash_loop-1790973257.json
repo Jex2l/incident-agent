@@ -1,0 +1,16 @@
+{
+  "run_id": "crash_loop-1790973257",
+  "scenario": "crash_loop",
+  "component": "cart",
+  "root_cause_label": "crash_loop_bad_config",
+  "namespace": "incident-agent",
+  "injected_at": "2026-10-02T20:34:17.121035+00:00",
+  "reset_at": "2026-10-02T20:35:58.337340+00:00",
+  "status": "resolved",
+  "details": {
+    "force_crash_on_boot": true,
+    "expected_alerts": [
+      "CrashLoopBackOff"
+    ]
+  }
+}

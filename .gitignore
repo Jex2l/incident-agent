@@ -25,6 +25,7 @@ kubeconfig*
 
 # Eval / run artifacts (generated, not committed in bulk)
 evals/runs/*.jsonl
+evals/runs/*.json
 evals/results.json
 evals/report.md
 !evals/runs/.gitkeep

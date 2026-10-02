@@ -1,0 +1,17 @@
+{
+  "run_id": "oom_kill-1790972631",
+  "scenario": "oom_kill",
+  "component": "cart",
+  "root_cause_label": "oom_kill",
+  "namespace": "incident-agent",
+  "injected_at": "2026-10-02T20:23:51.934200+00:00",
+  "reset_at": "2026-10-02T20:24:32.489478+00:00",
+  "status": "resolved",
+  "details": {
+    "memory_ballast_mb": 300,
+    "memory_limit": "64Mi",
+    "expected_alerts": [
+      "PodOOMKilled"
+    ]
+  }
+}
