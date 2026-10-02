@@ -49,7 +49,11 @@ up: preflight
 	@echo "== Cluster up. kubectl context: $(KUBE_CONTEXT) =="
 
 down:
-	@kind delete cluster --name "$(CLUSTER_NAME)" || echo "No cluster named $(CLUSTER_NAME) found."
+	@if ! command -v kind >/dev/null 2>&1; then \
+		echo "kind is not installed, so there is no cluster to delete."; \
+	else \
+		kind delete cluster --name "$(CLUSTER_NAME)" || echo "No cluster named $(CLUSTER_NAME) found."; \
+	fi
 
 faults: venv
 	@$(PY) faults/run_all.py
