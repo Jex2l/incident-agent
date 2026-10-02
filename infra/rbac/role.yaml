@@ -1,0 +1,15 @@
+# Read-only, scoped to the incident-agent namespace only. No secrets, no
+# write verbs anywhere. This is the actual safety boundary for the agent's
+# kube_read tool - enforced by the API server, not by application code.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: incident-agent-reader-role
+  namespace: incident-agent
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log", "events", "services"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list", "watch"]

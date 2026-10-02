@@ -48,4 +48,3 @@ node_modules/
 *.bin
 chroma/
 *.sqlite3
-!runbooks/runbooks.sqlite3.gitkeep

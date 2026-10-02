@@ -36,6 +36,12 @@ done
 echo "[deploy-app] Applying namespace..."
 kubectl --context "${KUBE_CONTEXT}" apply -f "${ROOT_DIR}/target-app/k8s/namespace.yaml"
 
+echo "[deploy-app] Applying read-only RBAC for the agent's kube_read tool..."
+kubectl --context "${KUBE_CONTEXT}" apply \
+  -f "${ROOT_DIR}/infra/rbac/serviceaccount.yaml" \
+  -f "${ROOT_DIR}/infra/rbac/role.yaml" \
+  -f "${ROOT_DIR}/infra/rbac/rolebinding.yaml"
+
 echo "[deploy-app] Deploying Redpanda..."
 kubectl --context "${KUBE_CONTEXT}" apply -f "${ROOT_DIR}/infra/redpanda/redpanda.yaml"
 
