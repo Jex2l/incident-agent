@@ -1,0 +1,71 @@
+# Minimal-resource values for prometheus-community/kube-prometheus-stack.
+# Tuned for an 8-core/16GB kind node, not production.
+fullnameOverride: kube-prometheus-stack
+
+prometheus:
+  prometheusSpec:
+    retention: 6h
+    scrapeInterval: 15s
+    evaluationInterval: 15s
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    # Pick up ServiceMonitors/PrometheusRules from every namespace regardless
+    # of chart-release labels, so target-app/infra manifests don't need to
+    # carry kube-prometheus-stack's own release label.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    walCompression: true
+  service:
+    type: NodePort
+    nodePort: 30090
+
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests: {cpu: 25m, memory: 64Mi}
+      limits: {cpu: 100m, memory: 128Mi}
+  service:
+    type: NodePort
+    nodePort: 30093
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      receiver: webhook-receiver
+      group_by: ["alertname", "service"]
+      group_wait: 10s
+      group_interval: 30s
+      repeat_interval: 2h
+    receivers:
+      - name: webhook-receiver
+        webhook_configs:
+          - url: http://webhook-receiver.incident-agent.svc.cluster.local:8080/alerts
+            send_resolved: true
+
+grafana:
+  adminPassword: admin
+  resources:
+    requests: {cpu: 25m, memory: 96Mi}
+    limits: {cpu: 200m, memory: 192Mi}
+  service:
+    type: NodePort
+    nodePort: 30300
+  persistence:
+    enabled: false
+  sidecar:
+    dashboards: {enabled: true, label: grafana_dashboard}
+    datasources: {enabled: true}
+
+kubeStateMetrics:
+  enabled: true
+nodeExporter:
+  enabled: true
+
+# Keep the stack lean: these components aren't needed for this project.
+kubeApiServer: {enabled: false}
+kubeControllerManager: {enabled: false}
+kubeScheduler: {enabled: false}
+kubeEtcd: {enabled: false}
+kubeProxy: {enabled: false}

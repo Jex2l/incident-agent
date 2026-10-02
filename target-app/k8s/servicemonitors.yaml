@@ -1,0 +1,59 @@
+# Requires the Prometheus Operator CRDs (installed by kube-prometheus-stack).
+# kube-prometheus-stack's Prometheus is configured (see
+# infra/helm-values/kube-prometheus-stack-values.yaml) to select ServiceMonitors
+# across all namespaces, so these don't need extra release labels.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: frontend
+  namespace: incident-agent
+  labels: {app: frontend}
+spec:
+  selector:
+    matchLabels: {app: frontend}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: cart
+  namespace: incident-agent
+  labels: {app: cart}
+spec:
+  selector:
+    matchLabels: {app: cart}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kafka-producer
+  namespace: incident-agent
+  labels: {app: kafka-producer}
+spec:
+  selector:
+    matchLabels: {app: kafka-producer}
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kafka-consumer
+  namespace: incident-agent
+  labels: {app: kafka-consumer}
+spec:
+  selector:
+    matchLabels: {app: kafka-consumer}
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: 15s

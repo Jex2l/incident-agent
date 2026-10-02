@@ -1,0 +1,25 @@
+# Minimal-resource values for grafana/loki-stack (bundles Loki + Promtail).
+loki:
+  isDefault: false
+  persistence:
+    enabled: false
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {cpu: 250m, memory: 256Mi}
+  config:
+    table_manager:
+      retention_deletes_enabled: true
+      retention_period: 24h
+
+promtail:
+  resources:
+    requests: {cpu: 25m, memory: 64Mi}
+    limits: {cpu: 100m, memory: 128Mi}
+
+# Grafana is already installed by kube-prometheus-stack; don't install a
+# second copy, just point that one at this Loki instance.
+grafana:
+  enabled: false
+
+prometheus:
+  enabled: false

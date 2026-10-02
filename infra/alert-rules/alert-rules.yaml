@@ -1,0 +1,79 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: incident-agent-rules
+  namespace: incident-agent
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: incident-agent.http
+      rules:
+        - alert: HighErrorRate
+          expr: |
+            sum(rate(http_requests_total{namespace="incident-agent", status=~"5.."}[2m])) by (service)
+            / clamp_min(sum(rate(http_requests_total{namespace="incident-agent"}[2m])) by (service), 1e-9)
+            > 0.1
+          for: 1m
+          labels: {severity: critical}
+          annotations:
+            summary: "High HTTP error rate on {{ $labels.service }}"
+            description: "{{ $labels.service }} is returning 5xx for more than 10% of requests over the last 2m."
+            root_cause_hint: "dependency_down_or_bad_deploy"
+
+        - alert: HighLatency
+          expr: |
+            histogram_quantile(0.95,
+              sum(rate(http_request_duration_seconds_bucket{namespace="incident-agent"}[5m])) by (le, service)
+            ) > 1
+          for: 2m
+          labels: {severity: warning}
+          annotations:
+            summary: "High p95 latency on {{ $labels.service }}"
+            description: "{{ $labels.service }} p95 request latency has exceeded 1s for 2m."
+            root_cause_hint: "cpu_throttling_or_noisy_neighbor"
+
+    - name: incident-agent.pods
+      rules:
+        - alert: PodOOMKilled
+          expr: |
+            increase(kube_pod_container_status_restarts_total{namespace="incident-agent"}[10m]) > 0
+            and
+            kube_pod_container_status_last_terminated_reason{namespace="incident-agent", reason="OOMKilled"} == 1
+          for: 0m
+          labels: {severity: critical}
+          annotations:
+            summary: "Pod {{ $labels.pod }} was OOMKilled"
+            description: "Container {{ $labels.container }} in pod {{ $labels.pod }} was killed for exceeding its memory limit."
+            root_cause_hint: "oom_kill"
+
+        - alert: CrashLoopBackOff
+          expr: kube_pod_container_status_waiting_reason{namespace="incident-agent", reason="CrashLoopBackOff"} == 1
+          for: 1m
+          labels: {severity: critical}
+          annotations:
+            summary: "Pod {{ $labels.pod }} is in CrashLoopBackOff"
+            description: "Container {{ $labels.container }} in pod {{ $labels.pod }} is crash-looping."
+            root_cause_hint: "crash_loop_bad_config"
+
+        - alert: DeploymentUnavailable
+          expr: |
+            kube_deployment_status_replicas_available{namespace="incident-agent"}
+            < kube_deployment_spec_replicas{namespace="incident-agent"}
+          for: 2m
+          labels: {severity: critical}
+          annotations:
+            summary: "Deployment {{ $labels.deployment }} has unavailable replicas"
+            description: "{{ $labels.deployment }} has fewer available replicas than desired for 2m."
+            root_cause_hint: "bad_deploy_or_dependency_down"
+
+    - name: incident-agent.kafka
+      rules:
+        - alert: KafkaConsumerLagHigh
+          expr: kafka_consumer_lag_messages{namespace="incident-agent"} > 50
+          for: 2m
+          labels: {severity: warning}
+          annotations:
+            summary: "Kafka consumer lag is high for group {{ $labels.group }}"
+            description: "Consumer group {{ $labels.group }} on topic {{ $labels.topic }} has lag above 50 messages for 2m."
+            root_cause_hint: "slow_or_stopped_consumer"

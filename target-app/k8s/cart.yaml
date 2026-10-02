@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cart
+  namespace: incident-agent
+  labels: {app: cart}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: cart}
+  template:
+    metadata:
+      labels: {app: cart}
+    spec:
+      containers:
+        - name: cart
+          image: incident-agent/cart:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: REDIS_HOST
+              value: cache
+            - name: REDIS_PORT
+              value: "6379"
+          resources:
+            requests: {cpu: 25m, memory: 48Mi}
+            limits: {cpu: 250m, memory: 128Mi}
+          readinessProbe:
+            httpGet: {path: /readyz, port: 8080}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /healthz, port: 8080}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cart
+  namespace: incident-agent
+  labels: {app: cart}
+spec:
+  selector: {app: cart}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080

@@ -1,0 +1,68 @@
+# Single-node Redpanda via a plain Deployment, not the Redpanda Operator/Helm
+# chart. The operator's footprint (extra CRDs, cert-manager dependency,
+# multiple controller pods) isn't worth it for a single dev-mode broker on a
+# resource-constrained kind cluster. See docs/DECISIONS.md.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redpanda
+  namespace: incident-agent
+  labels: {app: redpanda}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: redpanda}
+  template:
+    metadata:
+      labels: {app: redpanda}
+    spec:
+      containers:
+        - name: redpanda
+          image: docker.redpanda.com/redpandadata/redpanda:v24.2.7
+          args:
+            - redpanda
+            - start
+            - --mode=dev-container
+            - --smp=1
+            - --memory=512M
+            - --overprovisioned
+            - --node-id=0
+            - --check=false
+            - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+            - --advertise-kafka-addr=PLAINTEXT://redpanda:9092
+            - --pandaproxy-addr=0.0.0.0:8082
+            - --advertise-pandaproxy-addr=redpanda:8082
+          ports:
+            - name: kafka
+              containerPort: 9092
+            - name: pandaproxy
+              containerPort: 8082
+            - name: admin
+              containerPort: 9644
+          resources:
+            requests: {cpu: 100m, memory: 384Mi}
+            limits: {cpu: 500m, memory: 768Mi}
+          readinessProbe:
+            tcpSocket: {port: 9092}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket: {port: 9092}
+            initialDelaySeconds: 15
+            periodSeconds: 15
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redpanda
+  namespace: incident-agent
+  labels: {app: redpanda}
+spec:
+  selector: {app: redpanda}
+  ports:
+    - name: kafka
+      port: 9092
+      targetPort: 9092
+    - name: admin
+      port: 9644
+      targetPort: 9644

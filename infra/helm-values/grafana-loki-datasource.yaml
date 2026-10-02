@@ -1,0 +1,19 @@
+# Picked up by kube-prometheus-stack's Grafana sidecar (datasources.enabled)
+# since it's labeled grafana_datasource=1. Wires the Loki installed by the
+# separate loki-stack release into the same Grafana.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-loki-datasource
+  namespace: monitoring
+  labels:
+    grafana_datasource: "1"
+data:
+  loki-datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Loki
+        type: loki
+        access: proxy
+        url: http://loki.monitoring.svc.cluster.local:3100
+        isDefault: false

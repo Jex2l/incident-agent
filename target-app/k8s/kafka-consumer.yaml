@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-consumer
+  namespace: incident-agent
+  labels: {app: kafka-consumer}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: kafka-consumer}
+  template:
+    metadata:
+      labels: {app: kafka-consumer}
+    spec:
+      containers:
+        - name: kafka-consumer
+          image: incident-agent/kafka-consumer:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: metrics
+              containerPort: 9100
+          env:
+            - name: KAFKA_BROKERS
+              value: redpanda:9092
+            - name: KAFKA_TOPIC
+              value: orders
+            - name: CONSUMER_GROUP
+              value: orders-consumer-group
+            - name: CONSUMER_DELAY_MS
+              value: "0"
+            - name: CONSUMER_STOPPED
+              value: "false"
+          resources:
+            requests: {cpu: 25m, memory: 48Mi}
+            limits: {cpu: 200m, memory: 128Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-consumer
+  namespace: incident-agent
+  labels: {app: kafka-consumer}
+spec:
+  selector: {app: kafka-consumer}
+  ports:
+    - name: metrics
+      port: 9100
+      targetPort: 9100
