@@ -22,4 +22,9 @@ nodes:
       - containerPort: 30800
         hostPort: 8000
         protocol: TCP
+      # Loki (verify-phase1.sh falls back to kubectl port-forward if this
+      # mapping isn't present, e.g. on a cluster created before this was added)
+      - containerPort: 30100
+        hostPort: 3100
+        protocol: TCP
   - role: worker

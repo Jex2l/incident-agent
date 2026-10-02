@@ -36,7 +36,7 @@ def connect(retries: int = 30, delay_s: float = 2.0) -> KafkaConsumer:
                 auto_offset_reset="earliest",
                 enable_auto_commit=True,
                 consumer_timeout_ms=1000,
-                request_timeout_ms=6000,
+                request_timeout_ms=20000,
             )
         except KafkaError as e:
             last_err = e

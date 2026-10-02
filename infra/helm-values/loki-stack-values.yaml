@@ -10,6 +10,9 @@ loki:
     table_manager:
       retention_deletes_enabled: true
       retention_period: 24h
+  service:
+    type: NodePort
+    nodePort: 30100
 
 promtail:
   resources:

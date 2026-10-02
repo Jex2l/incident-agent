@@ -9,7 +9,7 @@ prometheus:
     evaluationInterval: 15s
     resources:
       requests: {cpu: 100m, memory: 256Mi}
-      limits: {cpu: 500m, memory: 512Mi}
+      limits: {cpu: 1000m, memory: 1Gi}
     # Pick up ServiceMonitors/PrometheusRules from every namespace regardless
     # of chart-release labels, so target-app/infra manifests don't need to
     # carry kube-prometheus-stack's own release label.
@@ -24,8 +24,8 @@ prometheus:
 alertmanager:
   alertmanagerSpec:
     resources:
-      requests: {cpu: 25m, memory: 64Mi}
-      limits: {cpu: 100m, memory: 128Mi}
+      requests: {cpu: 25m, memory: 96Mi}
+      limits: {cpu: 200m, memory: 256Mi}
   service:
     type: NodePort
     nodePort: 30093
@@ -43,12 +43,18 @@ alertmanager:
         webhook_configs:
           - url: http://webhook-receiver.incident-agent.svc.cluster.local:8080/alerts
             send_resolved: true
+      # kube-prometheus-stack's default rules include a "Watchdog" heartbeat
+      # alert that always fires, routed to a receiver literally named "null"
+      # by chart convention (not Go nil - this is swallowed, not an error).
+      # It must exist or Alertmanager's own config validation rejects the
+      # whole config with "undefined receiver \"null\" used in route".
+      - name: "null"
 
 grafana:
   adminPassword: admin
   resources:
-    requests: {cpu: 25m, memory: 96Mi}
-    limits: {cpu: 200m, memory: 192Mi}
+    requests: {cpu: 50m, memory: 160Mi}
+    limits: {cpu: 400m, memory: 400Mi}
   service:
     type: NodePort
     nodePort: 30300
@@ -57,6 +63,9 @@ grafana:
   sidecar:
     dashboards: {enabled: true, label: grafana_dashboard}
     datasources: {enabled: true}
+    resources:
+      requests: {cpu: 25m, memory: 48Mi}
+      limits: {cpu: 100m, memory: 96Mi}
 
 kubeStateMetrics:
   enabled: true

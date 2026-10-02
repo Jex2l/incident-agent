@@ -13,6 +13,17 @@ WEBHOOK_URL="http://localhost:8000"
 PASS=0
 FAIL=0
 
+# Loki has no kind hostPort mapping (unlike Grafana/Prometheus/Alertmanager/
+# webhook-receiver), so port-forward to it for the duration of this script.
+LOKI_PF_PID=""
+cleanup() {
+  [[ -n "${LOKI_PF_PID}" ]] && kill "${LOKI_PF_PID}" 2>/dev/null
+}
+trap cleanup EXIT
+kubectl --context "${KUBE_CONTEXT}" -n monitoring port-forward svc/loki 3100:3100 >/dev/null 2>&1 &
+LOKI_PF_PID=$!
+sleep 2
+
 check() {
   local desc="$1"; shift
   if "$@"; then

@@ -15,15 +15,18 @@ fi
 kubectl config use-context "${KUBE_CONTEXT}" >/dev/null
 
 echo "[deploy-app] Building images..."
-declare -A IMAGES=(
-  [cart]="target-app/cart"
-  [frontend]="target-app/frontend"
-  [kafka-producer]="target-app/kafka-producer"
-  [kafka-consumer]="target-app/kafka-consumer"
-  [webhook-receiver]="infra/webhook-receiver"
-)
-for name in "${!IMAGES[@]}"; do
-  ctx="${ROOT_DIR}/${IMAGES[$name]}"
+# Plain "name path" pairs instead of an associative array: macOS ships bash
+# 3.2 by default, which predates bash 4's declare -A.
+IMAGES="
+cart target-app/cart
+frontend target-app/frontend
+kafka-producer target-app/kafka-producer
+kafka-consumer target-app/kafka-consumer
+webhook-receiver infra/webhook-receiver
+"
+echo "${IMAGES}" | while read -r name path; do
+  [ -z "${name}" ] && continue
+  ctx="${ROOT_DIR}/${path}"
   echo "  building incident-agent/${name}:dev from ${ctx}"
   docker build -q -t "incident-agent/${name}:dev" "${ctx}" >/dev/null
   echo "  loading incident-agent/${name}:dev into kind cluster '${CLUSTER_NAME}'"

@@ -1,0 +1,16 @@
+== 1. App health ==
+  [ok] frontend pod ready
+  [ok] cart pod ready
+== 2. Metrics queryable (Prometheus) ==
+  [ok] prometheus API reachable
+  [ok] http_requests_total has samples
+== 3. Logs queryable (Loki) ==
+  [ok] loki API reachable
+  [ok] loki has labels
+== 4. Manual fault -> alert -> webhook ==
+  Scaling 'cache' to 0 replicas (dependency-down fault)...
+  Waiting up to 4 minutes for HighErrorRate or DeploymentUnavailable alert to reach the webhook...
+  [ok] alert reached webhook receiver
+  Resetting: scaling 'cache' back to 1 replica...
+
+== Result: 7 passed, 0 failed ==
