@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+dist/
+build/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+kubeconfig*
+!infra/kind/kind-config.yaml
+
+# OS
+.DS_Store
+
+# Eval / run artifacts (generated, not committed in bulk)
+evals/runs/*.jsonl
+evals/results.json
+evals/report.md
+!evals/runs/.gitkeep
+
+# Traces
+traces/*.json
+!traces/.gitkeep
+
+# Helm
+infra/helm-values/*.local.yaml
+
+# Logs
+*.log
+
+# Node (replay site has no build step, but just in case)
+node_modules/
+
+# Model/data caches
+*.gguf
+*.bin
+chroma/
+*.sqlite3
+!runbooks/runbooks.sqlite3.gitkeep

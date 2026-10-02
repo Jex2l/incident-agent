@@ -1,0 +1,25 @@
+# kind cluster config for incident-agent.
+# Single control-plane + single worker keeps resource usage low (fits 16GB RAM machines).
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: incident-agent
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      # Grafana
+      - containerPort: 30300
+        hostPort: 3000
+        protocol: TCP
+      # Prometheus
+      - containerPort: 30090
+        hostPort: 9090
+        protocol: TCP
+      # Alertmanager
+      - containerPort: 30093
+        hostPort: 9093
+        protocol: TCP
+      # Webhook receiver / agent orchestrator
+      - containerPort: 30800
+        hostPort: 8000
+        protocol: TCP
+  - role: worker
