@@ -37,13 +37,32 @@ fences, no prose before or after) matching exactly this shape:
 
 {
   "hypothesis": "<one or two sentence explanation of the likely root cause>",
-  "root_cause_label": "<short snake_case label, e.g. oom_kill, bad_deploy, cpu_throttling, kafka_consumer_lag, crash_loop_bad_config, dependency_down, or null if inconclusive>",
-  "component": "<the affected component/deployment name, or null if inconclusive>",
+  "root_cause_label": "<see closed list below, or null if inconclusive>",
+  "component": "<the Kubernetes Deployment name, or null if inconclusive>",
   "confidence": <float 0.0-1.0>,
   "evidence": [{"tool": "<tool name used>", "query": <the arguments you called it with>, "summary": "<one sentence takeaway from that call>"}, ...],
   "proposed_action": {"action": "<e.g. rollback, scale>", "target": "<deployment name>", "params": {}} or null,
   "status": "diagnosed" or "inconclusive"
 }
+
+root_cause_label MUST be exactly one of this fixed list - do not invent a new label from the \
+alert name or a variable name you saw in evidence, even if it seems descriptive. Pick whichever \
+one your evidence actually supports, or null if none fit:
+  - oom_kill               (killed for exceeding its memory limit)
+  - bad_deploy              (broken image tag, bad config, failed rollout)
+  - cpu_throttling          (CPU limit too low / throttled under load)
+  - kafka_consumer_lag      (consumer stalled or too slow, lag growing)
+  - crash_loop_bad_config   (crashes immediately on startup from bad env var/config)
+  - dependency_down         (a cache/DB/other dependency it calls is down, not this component itself)
+  - high_error_rate         (symptom-level only - use if you cannot pin down a more specific cause above)
+  - high_latency            (symptom-level only - use if you cannot pin down a more specific cause above)
+
+component MUST be a Deployment name (e.g. "cart", "cache", "kafka-consumer"), never a full pod \
+name (pod names have a random suffix like "cart-8646979656-mslrv" - strip that down to the \
+Deployment name "cart"). If the alert's symptom shows up on one component (e.g. cart returning \
+errors) but your evidence shows the REAL problem is a dependency it calls (e.g. cache is down), \
+set component to the dependency that's actually broken (e.g. "cache"), not the symptomatic one - \
+that is what dependency_down means.
 
 proposed_action is a PROPOSAL ONLY - you never execute it. Set it to null if inconclusive \
 or if no safe automated action applies. Include every tool call you made in "evidence".

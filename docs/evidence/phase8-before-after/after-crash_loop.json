@@ -1,0 +1,244 @@
+{
+  "incident_id": "eval-agent-crash_loop-0-1791112074",
+  "alert": {
+    "alertname": "CrashLoopBackOff",
+    "namespace": "incident-agent",
+    "severity": "critical",
+    "labels": {
+      "alertname": "CrashLoopBackOff",
+      "container": "cart",
+      "endpoint": "http",
+      "instance": "10.244.1.2:8080",
+      "job": "kube-state-metrics",
+      "namespace": "incident-agent",
+      "pod": "cart-59f9bddfbf-gthw2",
+      "prometheus": "monitoring/kube-prometheus-stack-prometheus",
+      "reason": "CrashLoopBackOff",
+      "service": "kube-prometheus-stack-kube-state-metrics",
+      "severity": "critical",
+      "uid": "e1a61130-70fd-4c54-9a41-81338dbbbf27"
+    },
+    "summary": "Pod cart-59f9bddfbf-gthw2 is in CrashLoopBackOff",
+    "description": "Container cart in pod cart-59f9bddfbf-gthw2 is crash-looping.",
+    "root_cause_hint": "crash_loop_bad_config",
+    "starts_at": "2026-10-04T11:07:41.698Z"
+  },
+  "turns": [
+    {
+      "content": null,
+      "tool_calls": [
+        {
+          "name": "kube_list_pods",
+          "arguments": {
+            "namespace": "incident-agent"
+          }
+        },
+        {
+          "name": "prometheus_query_instant",
+          "arguments": {
+            "promql": "container_memory_working_set_bytes{job=\"kube-state-metrics\", container=\"cart\"}"
+          }
+        }
+      ],
+      "prompt_tokens": 2034,
+      "completion_tokens": 358
+    },
+    {
+      "content": null,
+      "tool_calls": [
+        {
+          "name": "search_pod_logs",
+          "arguments": {
+            "namespace": "incident-agent",
+            "pod": "cart-59f9bddfbf-gthw2"
+          }
+        },
+        {
+          "name": "kube_list_events",
+          "arguments": {
+            "involved_object_name": "cart-59f9bddfbf-gthw2",
+            "namespace": "incident-agent"
+          }
+        },
+        {
+          "name": "kube_list_deployments",
+          "arguments": {
+            "namespace": "incident-agent"
+          }
+        },
+        {
+          "name": "search_runbooks_tool",
+          "arguments": {
+            "query": "CrashLoopBackOff cart",
+            "top_k": 3
+          }
+        }
+      ],
+      "prompt_tokens": 2879,
+      "completion_tokens": 128
+    },
+    {
+      "content": null,
+      "tool_calls": [
+        {
+          "name": "prometheus_query_instant",
+          "arguments": {
+            "promql": "container_memory_working_set_bytes{job=\"kube-state-metrics\", container=\"cart\"}"
+          }
+        },
+        {
+          "name": "kube_get_pod_logs",
+          "arguments": {
+            "namespace": "incident-agent",
+            "pod": "cart-59f9bddfbf-gthw2",
+            "tail_lines": 10
+          }
+        },
+        {
+          "name": "prometheus_query_range_stats",
+          "arguments": {
+            "minutes": 60,
+            "promql": "container_cpu_usage_seconds_total{job=\"kube-state-metrics\", container=\"cart\"}",
+            "step_seconds": 300
+          }
+        },
+        {
+          "name": "search_runbooks_tool",
+          "arguments": {
+            "query": "CrashLoopBackOff cart",
+            "top_k": 3
+          }
+        }
+      ],
+      "prompt_tokens": 3681,
+      "completion_tokens": 168
+    },
+    {
+      "content": "{\n  \"hypothesis\": \"The cart deployment is configured to crash on boot as indicated by its logs.\",\n  \"root_cause_label\": \"crash_loop_bad_config\",\n  \"component\": \"cart\",\n  \"confidence\": 0.95,\n  \"evidence\": [\n    {\"tool\": \"search_runbooks_tool\", \"query\": \"CrashLoopBackOff cart\", \"summary\": \"Found a runbook matching the symptom of CrashLoopBackOff, indicating a bad config or env var issue.\"},\n    {\"tool\": \"kube_get_pod_logs\", \"namespace\": \"incident-agent\", \"pod\": \"cart-59f9bddfbf-gthw2\", \"tail_lines\": 10, \"summary\": \"Pod logs show the process exiting immediately due to FORCE_CRASH_ON_BOOT being set.\"},\n    {\"tool\": \"prometheus_query_instant\", \"query\": \"container_memory_working_set_bytes{job=\\\"kube-state-metrics\\\", container=\\\"cart\\\"}\", \"summary\": \"No recent memory usage data available for cart, indicating no OOM issues currently.\"}\n  ],\n  \"proposed_action\": null,\n  \"status\": \"diagnosed\"\n}",
+      "tool_calls": [],
+      "prompt_tokens": 3698,
+      "completion_tokens": 246
+    },
+    {
+      "content": "{\n  \"hypothesis\": \"The cart Deployment is crashing immediately on startup due to bad configuration or environment variable settings.\",\n  \"root_cause_label\": \"crash_loop_bad_config\",\n  \"component\": \"cart\",\n  \"confidence\": 0.8,\n  \"evidence\": [\n    {\"tool\": \"prometheus_query_instant\", \"query\": \"container_memory_working_set_bytes{job=\\\"kube-state-metrics\\\", container=\\\"cart\\\"}\", \"summary\": \"No memory usage data found for cart container.\"},\n    {\"tool\": \"search_pod_logs\", \"query\": \"namespace=incident-agent pod=cart-59f9bddfbf-gthw2\", \"summary\": \"Cart process exits immediately after start with a FORCE_CRASH_ON_BOOT message.\"},\n    {\"tool\": \"prometheus_query_range_stats\", \"query\": \"container_cpu_usage_seconds_total{job=\\\"kube-state-metrics\\\", container=\\\"cart\\\"}\", \"summary\": \"No CPU usage data found for cart container over the last 60 minutes.\"},\n    {\"tool\": \"search_runbooks_tool\", \"query\": \"CrashLoopBackOff cart\", \"summary\": \"Runbook suggests immediate crashes on startup are caused by bad config or env var issues.\"}\n  ],\n  \"proposed_action\": null,\n  \"status\": \"diagnosed\"\n}",
+      "tool_calls": [],
+      "prompt_tokens": 3735,
+      "completion_tokens": 276
+    }
+  ],
+  "tool_calls": [
+    {
+      "name": "kube_list_pods",
+      "arguments": {
+        "namespace": "incident-agent"
+      },
+      "result_preview": "{\"namespace\": \"incident-agent\", \"count\": 8, \"truncated\": false, \"pods\": [{\"name\": \"cache-6c684dcb-cvkm5\", \"phase\": \"Running\", \"node\": \"incident-agent-worker\", \"containers\": [{\"name\": \"redis\", \"ready\": true, \"restart_count\": 0, \"state\": \"running\", \"reason\": null, \"image\": \"docker.io/library/redis:7-alpine\"}]}, {\"name\": \"cart-59f9bddfbf-gthw2\", \"phase\": \"Running\", \"node\": \"incident-agent-worker\", \"containers\": [{\"name\": \"cart\", \"ready\": false, \"restart_count\": 4, \"state\": \"waiting\", \"reason\": \"CrashLoopBackOff\", \"image\": \"docker.io/incident-agent/cart:dev\"}]}, {\"name\": \"cart-5b6d578fb8-fgwdc\", \"phase\": \"Running\", \"node\": \"incident-agent-worker\", \"containers\": [{\"name\": \"cart\", \"ready\": true, \"restart_count\": 0, \"state\": \"running\", \"reason\": null, \"image\": \"docker.io/incident-agent/cart:dev\"}"
+    },
+    {
+      "name": "prometheus_query_instant",
+      "arguments": {
+        "promql": "container_memory_working_set_bytes{job=\"kube-state-metrics\", container=\"cart\"}"
+      },
+      "result_preview": "{\"query\": \"container_memory_working_set_bytes{job=\\\"kube-state-metrics\\\", container=\\\"cart\\\"}\", \"result_type\": \"vector\", \"series_count\": 0, \"truncated\": false, \"series\": []}"
+    },
+    {
+      "name": "search_pod_logs",
+      "arguments": {
+        "namespace": "incident-agent",
+        "pod": "cart-59f9bddfbf-gthw2"
+      },
+      "result_preview": "{\"query\": \"{namespace=\\\"incident-agent\\\", pod=~\\\"cart-59f9bddfbf-gthw2.*\\\"}\", \"since_minutes\": 15, \"total_lines\": 7, \"pattern_count\": 1, \"truncated\": false, \"patterns\": [{\"pattern\": \"[cart] FORCE_CRASH_ON_BOOT set, exiting to simulate a crash loop\", \"count\": 7, \"samples\": [\"[cart] FORCE_CRASH_ON_BOOT set, exiting to simulate a crash loop\", \"[cart] FORCE_CRASH_ON_BOOT set, exiting to simulate a crash loop\", \"[cart] FORCE_CRASH_ON_BOOT set, exiting to simulate a crash loop\"]}]}"
+    },
+    {
+      "name": "kube_list_events",
+      "arguments": {
+        "involved_object_name": "cart-59f9bddfbf-gthw2",
+        "namespace": "incident-agent"
+      },
+      "result_preview": "{\"namespace\": \"incident-agent\", \"count\": 5, \"truncated\": false, \"events\": [{\"type\": \"Warning\", \"reason\": \"BackOff\", \"message\": \"Back-off restarting failed container cart in pod cart-59f9bddfbf-gthw2_incident-agent(e1a61130-70fd-4c54-9a41-81338dbbbf27)\", \"count\": 14, \"last_timestamp\": \"2026-10-04 11:12:08+00:00\", \"involved_object\": \"Pod/cart-59f9bddfbf-gthw2\"}, {\"type\": \"Normal\", \"reason\": \"Pulled\", \"message\": \"Container image \\\"incident-agent/cart:dev\\\" already present on machine and can be accessed by the pod\", \"count\": 7, \"last_timestamp\": \"2026-10-04 11:11:58+00:00\", \"involved_object\": \"Pod/cart-59f9bddfbf-gthw2\"}, {\"type\": \"Normal\", \"reason\": \"Created\", \"message\": \"Container created\", \"count\": 7, \"last_timestamp\": \"2026-10-04 11:11:58+00:00\", \"involved_object\": \"Pod/cart-59f9bddfbf-gth"
+    },
+    {
+      "name": "kube_list_deployments",
+      "arguments": {
+        "namespace": "incident-agent"
+      },
+      "result_preview": "{\"namespace\": \"incident-agent\", \"count\": 7, \"truncated\": false, \"deployments\": [{\"name\": \"cache\", \"desired_replicas\": 1, \"available_replicas\": 1, \"ready_replicas\": 1, \"conditions\": [{\"type\": \"Progressing\", \"status\": \"True\", \"reason\": \"NewReplicaSetAvailable\"}, {\"type\": \"Available\", \"status\": \"True\", \"reason\": \"MinimumReplicasAvailable\"}]}, {\"name\": \"cart\", \"desired_replicas\": 1, \"available_replicas\": 1, \"ready_replicas\": 1, \"conditions\": [{\"type\": \"Available\", \"status\": \"True\", \"reason\": \"MinimumReplicasAvailable\"}, {\"type\": \"Progressing\", \"status\": \"True\", \"reason\": \"ReplicaSetUpdated\"}]}, {\"name\": \"frontend\", \"desired_replicas\": 1, \"available_replicas\": 1, \"ready_replicas\": 1, \"conditions\": [{\"type\": \"Progressing\", \"status\": \"True\", \"reason\": \"NewReplicaSetAvailable\"}, {\"type\": \"Availabl"
+    },
+    {
+      "name": "search_runbooks_tool",
+      "arguments": {
+        "query": "CrashLoopBackOff cart",
+        "top_k": 3
+      },
+      "result_preview": "{\"query\": \"CrashLoopBackOff cart\", \"mode\": \"embedding\", \"results\": [{\"title\": \"CrashLoopBackOff (bad config / bad env var)\", \"path\": \"runbooks/crash-loop-bad-config.md\", \"root_cause_label\": \"crash_loop_bad_config\", \"score\": 0.6912, \"excerpt\": \"# CrashLoopBackOff (bad config / bad env var)\\n\\n## Symptoms\\n- Alert: `CrashLoopBackOff`.\\n- `kube_pod_container_status_waiting_reason{reason=\\\"CrashLoopBackOff\\\"}` is 1.\\n- Pod restart count climbing rapidly at first, with growing backoff delays\\n  between restarts (10s, 20s, 40s, ...).\\n- Container logs show the process exiting almost immediately after start\\n  (often with no meaningful log output at all\"}, {\"title\": \"Pod OOMKilled\", \"path\": \"runbooks/oom-kill.md\", \"root_cause_label\": \"oom_kill\", \"score\": 0.5478, \"excerpt\": \"# Pod OOMKilled\\n\\n## "
+    },
+    {
+      "name": "prometheus_query_instant",
+      "arguments": {
+        "promql": "container_memory_working_set_bytes{job=\"kube-state-metrics\", container=\"cart\"}"
+      },
+      "result_preview": "{\"query\": \"container_memory_working_set_bytes{job=\\\"kube-state-metrics\\\", container=\\\"cart\\\"}\", \"result_type\": \"vector\", \"series_count\": 0, \"truncated\": false, \"series\": []}"
+    },
+    {
+      "name": "kube_get_pod_logs",
+      "arguments": {
+        "namespace": "incident-agent",
+        "pod": "cart-59f9bddfbf-gthw2",
+        "tail_lines": 10
+      },
+      "result_preview": "{\"pod\": \"cart-59f9bddfbf-gthw2\", \"namespace\": \"incident-agent\", \"container\": null, \"line_count\": 1, \"lines\": [\"[cart] FORCE_CRASH_ON_BOOT set, exiting to simulate a crash loop\"]}"
+    },
+    {
+      "name": "prometheus_query_range_stats",
+      "arguments": {
+        "minutes": 60,
+        "promql": "container_cpu_usage_seconds_total{job=\"kube-state-metrics\", container=\"cart\"}",
+        "step_seconds": 300
+      },
+      "result_preview": "{\"query\": \"container_cpu_usage_seconds_total{job=\\\"kube-state-metrics\\\", container=\\\"cart\\\"}\", \"window_minutes\": 60, \"series_count\": 0, \"truncated\": false, \"series\": []}"
+    },
+    {
+      "name": "search_runbooks_tool",
+      "arguments": {
+        "query": "CrashLoopBackOff cart",
+        "top_k": 3
+      },
+      "result_preview": "{\"query\": \"CrashLoopBackOff cart\", \"mode\": \"embedding\", \"results\": [{\"title\": \"CrashLoopBackOff (bad config / bad env var)\", \"path\": \"runbooks/crash-loop-bad-config.md\", \"root_cause_label\": \"crash_loop_bad_config\", \"score\": 0.6912, \"excerpt\": \"# CrashLoopBackOff (bad config / bad env var)\\n\\n## Symptoms\\n- Alert: `CrashLoopBackOff`.\\n- `kube_pod_container_status_waiting_reason{reason=\\\"CrashLoopBackOff\\\"}` is 1.\\n- Pod restart count climbing rapidly at first, with growing backoff delays\\n  between restarts (10s, 20s, 40s, ...).\\n- Container logs show the process exiting almost immediately after start\\n  (often with no meaningful log output at all\"}, {\"title\": \"Pod OOMKilled\", \"path\": \"runbooks/oom-kill.md\", \"root_cause_label\": \"oom_kill\", \"score\": 0.5478, \"excerpt\": \"# Pod OOMKilled\\n\\n## "
+    }
+  ],
+  "result": {
+    "hypothesis": "The cart Deployment is crashing immediately on startup due to bad configuration or environment variable settings.",
+    "root_cause_label": "crash_loop_bad_config",
+    "component": "cart",
+    "confidence": 0.8,
+    "evidence": [
+      {
+        "tool": "prometheus_query_instant",
+        "query": "container_memory_working_set_bytes{job=\"kube-state-metrics\", container=\"cart\"}",
+        "summary": "No memory usage data found for cart container."
+      },
+      {
+        "tool": "search_pod_logs",
+        "query": "namespace=incident-agent pod=cart-59f9bddfbf-gthw2",
+        "summary": "Cart process exits immediately after start with a FORCE_CRASH_ON_BOOT message."
+      },
+      {
+        "tool": "prometheus_query_range_stats",
+        "query": "container_cpu_usage_seconds_total{job=\"kube-state-metrics\", container=\"cart\"}",
+        "summary": "No CPU usage data found for cart container over the last 60 minutes."
+      },
+      {
+        "tool": "search_runbooks_tool",
+        "query": "CrashLoopBackOff cart",
+        "summary": "Runbook suggests immediate crashes on startup are caused by bad config or env var issues."
+      }
+    ],
+    "proposed_action": null,
+    "status": "diagnosed"
+  },
+  "budget": {
+    "steps_used": 3,
+    "tokens_used": 17203,
+    "elapsed_s": 483.32
+  }
+}

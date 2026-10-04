@@ -111,6 +111,36 @@ Built the investigation loop end to end:
 
 **Real result**: `evals/report.md` and `evals/results.json` generated from 6 real runs (1 per scenario, full agent + baseline), produced by `make eval`'s exact command (`python -m evals.runner`), recovering through two infrastructure crashes along the way without ever fabricating or hand-editing a number - bad/incomplete runs were deleted and re-run for real, not patched. 24 new tests (`tests/test_scorer.py`, `tests/test_baseline.py`), `pytest tests/` now 69/69, all with mocked LLM/tool calls - no live dependencies needed to verify the scoring and baseline logic itself.
 
+## 2026-10-04 — Phase 8: iterate on failures
+
+Full detail (real before/after quotes, not a summary) is in `docs/failure-modes.md` -
+this entry is just the short version.
+
+The Phase 7 eval report's failure-mode tally pointed at a specific, fixable cause
+rather than "the model needs to be smarter": `root_cause_label` was only ever given
+as *examples* in the prompt, and `OUTPUT_SCHEMA` accepted any string, so the model
+would label a `CrashLoopBackOff` investigation `crash_loop_backoff` (straight from the
+alert name) or `force_crash_on_boot` (straight from an env var it found in evidence)
+instead of picking from the project's own canonical taxonomy. Separately, `component`
+came back as a full pod name (with its random suffix) instead of the Deployment name.
+
+Fixed in two places, not one, since a prompt-only fix is advisory and a schema-only
+fix gives no guidance for *what* to pick instead:
+- `agent/prompts.py`: closed list of 8 `root_cause_label` values with one-line
+  definitions each, explicit "don't invent one from the alert name" instruction, and
+  an explicit Deployment-name-not-pod-name rule for `component`.
+- `agent/schema.py`: matching `enum` constraint on `root_cause_label`, so a wrong
+  label now fails validation and goes through the orchestrator's existing bounded
+  retry loop with the real validation error - mechanically enforced, not just worded
+  differently.
+
+Re-ran `oom_kill`, `cpu_throttle`, `crash_loop` live through the exact eval-harness
+code path (`evals.runner.run_one()`), same model/budget/tools, nothing else changed:
+**3/3 exact-match, up from 0/3 in the Phase 7 report.** `dependency_down`/`bad_deploy`
+were not re-verified in this pass (a full 6-scenario re-run is the multi-hour cost
+documented in Phase 7) - left for a future `make eval` run rather than claimed without
+having run it.
+
 ## Open / deferred
 
 - Docker Desktop, kind, kubectl, helm, uv are not installed on the dev machine as of Phase 0. User was given exact `brew install` commands. Phases 1+ that need a live cluster cannot be verified until these are installed; such results will be marked "unverified" per working rule #2 until then.
