@@ -36,6 +36,18 @@ async def receive_alert(request: Request):
 def list_alerts(limit: int = 20):
     if not LOG_PATH.exists():
         return {"alerts": []}
-    lines = LOG_PATH.read_text().strip().splitlines()
-    records = [json.loads(line) for line in lines[-limit:]]
+    # errors="replace": a prior ungraceful shutdown (observed in practice -
+    # this project's cluster runs under enough CPU contention that Docker
+    # Desktop itself has crashed mid-write) can leave partial/binary bytes
+    # at the end of an append-only file. Decode leniently and skip any line
+    # that still doesn't parse as JSON, rather than let one bad line 500 the
+    # whole endpoint.
+    text = LOG_PATH.read_bytes().decode("utf-8", errors="replace")
+    lines = text.strip().splitlines()
+    records = []
+    for line in lines[-limit:]:
+        try:
+            records.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
     return {"alerts": records}

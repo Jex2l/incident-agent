@@ -1,0 +1,41 @@
+# Ground truth for the 6 fault scenarios. Mirrors the labels each
+# faults/*.py script already records in evals/runs/<scenario>-*.json at
+# inject time (ROOT_CAUSE_LABEL/COMPONENT constants) - kept here as a
+# single source of truth for scoring so the eval harness doesn't need to
+# import the fault scripts themselves.
+scenarios:
+  - name: oom_kill
+    fault_module: oom_kill
+    root_cause_label: oom_kill
+    component: cart
+    expected_alerts: [PodOOMKilled]
+
+  - name: bad_deploy
+    fault_module: bad_deploy
+    root_cause_label: bad_deploy
+    component: cart
+    expected_alerts: [DeploymentUnavailable]
+
+  - name: cpu_throttle
+    fault_module: cpu_throttle
+    root_cause_label: cpu_throttling
+    component: cart
+    expected_alerts: [HighLatency]
+
+  - name: kafka_lag
+    fault_module: kafka_lag
+    root_cause_label: kafka_consumer_lag
+    component: kafka-consumer
+    expected_alerts: [KafkaConsumerLagHigh]
+
+  - name: crash_loop
+    fault_module: crash_loop
+    root_cause_label: crash_loop_bad_config
+    component: cart
+    expected_alerts: [CrashLoopBackOff]
+
+  - name: dependency_down
+    fault_module: dependency_down
+    root_cause_label: dependency_down
+    component: cache
+    expected_alerts: [DeploymentUnavailable, HighErrorRate]

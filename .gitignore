@@ -23,11 +23,11 @@ kubeconfig*
 # OS
 .DS_Store
 
-# Eval / run artifacts (generated, not committed in bulk)
+# Fault-script ground-truth records (generated per run, not committed in
+# bulk) - but evals/results.json and evals/report.md ARE committed: they're
+# the real eval harness deliverable (see docs/DECISIONS.md, Phase 7).
 evals/runs/*.jsonl
 evals/runs/*.json
-evals/results.json
-evals/report.md
 !evals/runs/.gitkeep
 
 # Traces
