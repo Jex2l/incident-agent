@@ -10,6 +10,9 @@ from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from opentelemetry.trace import Status, StatusCode
+
+from agent.tracing import get_tracer, truncate
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -61,6 +64,19 @@ class ToolSet:
         return list(self._tool_to_server.keys())
 
     async def call(self, tool_name: str, arguments: dict) -> dict:
+        tracer = get_tracer()
+        with tracer.start_as_current_span("tool.call") as span:
+            span.set_attribute("tool.name", tool_name)
+            span.set_attribute("tool.arguments", truncate(arguments))
+
+            output = await self._call_uninstrumented(tool_name, arguments)
+
+            span.set_attribute("tool.result_preview", truncate(output))
+            if isinstance(output, dict) and "error" in output:
+                span.set_status(Status(StatusCode.ERROR, str(output["error"])))
+            return output
+
+    async def _call_uninstrumented(self, tool_name: str, arguments: dict) -> dict:
         if tool_name not in self._tool_to_server:
             return {"error": f"unknown tool '{tool_name}'. Available: {self.tool_names()}"}
         session = self._sessions[self._tool_to_server[tool_name]]

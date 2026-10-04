@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>incident-agent trace viewer</title>
+<style>
+  body { font-family: -apple-system, sans-serif; max-width: 1000px; margin: 30px auto; padding: 0 20px; color: #222; background: #fff; }
+  h1, h3 { color: #222; }
+  h1 { font-size: 20px; }
+  .hint { color: #657b83; margin-bottom: 20px; }
+  .trace { border: 1px solid #ddd; border-radius: 6px; margin-bottom: 16px; padding: 14px; }
+  .trace-header { display: flex; justify-content: space-between; cursor: pointer; align-items: center; }
+  .trace-header h3 { margin: 0; font-size: 15px; }
+  .trace-meta { color: #657b83; font-size: 13px; }
+  .spans { margin-top: 12px; display: none; }
+  .trace.open .spans { display: block; }
+  .span-row { display: flex; align-items: center; margin: 4px 0; font-size: 13px; }
+  .span-bar-track { flex: 1; background: #f4f4f4; border-radius: 3px; height: 20px; position: relative; margin: 0 10px; }
+  .span-bar { position: absolute; top: 0; height: 100%; border-radius: 3px; }
+  .span-name { width: 220px; flex-shrink: 0; font-family: monospace; }
+  .span-dur { width: 70px; flex-shrink: 0; text-align: right; color: #657b83; }
+  .llm { background: #268bd2; }
+  .tool { background: #2aa198; }
+  .investigate { background: #b58900; }
+  .error { background: #dc322f !important; }
+  .attrs { display: none; margin: 4px 0 10px 230px; font-size: 12px; background: #fafafa; padding: 8px; border-radius: 4px; white-space: pre-wrap; word-break: break-word; }
+  .attrs.open { display: block; }
+  select, input { font-size: 13px; padding: 4px; margin-right: 8px; }
+</style>
+</head>
+<body>
+  <h1>incident-agent &mdash; trace viewer</h1>
+  <p class="hint">Reads <code>spans.jsonl</code> from this directory. One trace per investigation; click a trace to expand its spans, click a span to see its full attributes.</p>
+  <div>
+    <input id="filter" type="text" placeholder="filter by incident id or alert name..." style="width:300px">
+  </div>
+  <div id="traces"></div>
+
+<script>
+async function load() {
+  const resp = await fetch('spans.jsonl');
+  const text = await resp.text();
+  const lines = text.trim().split('\n').filter(l => l.trim());
+  const spans = lines.map(l => JSON.parse(l));
+
+  const byTrace = {};
+  for (const s of spans) {
+    (byTrace[s.trace_id] ||= []).push(s);
+  }
+  return byTrace;
+}
+
+function kindClass(name) {
+  if (name === 'llm.chat') return 'llm';
+  if (name === 'tool.call') return 'tool';
+  return 'investigate';
+}
+
+function render(byTrace, filterText) {
+  const container = document.getElementById('traces');
+  container.innerHTML = '';
+  const traceIds = Object.keys(byTrace).sort((a, b) => {
+    const minA = Math.min(...byTrace[a].map(s => s.start_time_ns));
+    const minB = Math.min(...byTrace[b].map(s => s.start_time_ns));
+    return minB - minA;
+  });
+
+  for (const traceId of traceIds) {
+    const spans = byTrace[traceId].slice().sort((a, b) => a.start_time_ns - b.start_time_ns);
+    const root = spans.find(s => !s.parent_span_id) || spans[0];
+    const incidentId = root.attributes['incident.id'] || traceId.slice(0, 12);
+    const alertName = root.attributes['alert.name'] || '';
+    const status = root.attributes['result.status'] || '';
+
+    const haystack = (incidentId + ' ' + alertName).toLowerCase();
+    if (filterText && !haystack.includes(filterText.toLowerCase())) continue;
+
+    const traceStart = Math.min(...spans.map(s => s.start_time_ns));
+    const traceEnd = Math.max(...spans.map(s => s.end_time_ns || s.start_time_ns));
+    const totalMs = (traceEnd - traceStart) / 1e6 || 1;
+
+    const div = document.createElement('div');
+    div.className = 'trace';
+    const header = document.createElement('div');
+    header.className = 'trace-header';
+    header.innerHTML = `<h3>${alertName || incidentId}</h3>
+      <span class="trace-meta">${incidentId} &middot; ${status} &middot; ${spans.length} spans &middot; ${totalMs.toFixed(0)}ms</span>`;
+    header.onclick = () => div.classList.toggle('open');
+    div.appendChild(header);
+
+    const spansDiv = document.createElement('div');
+    spansDiv.className = 'spans';
+    for (const s of spans) {
+      const offsetMs = (s.start_time_ns - traceStart) / 1e6;
+      const durMs = s.duration_ms || 0;
+      const leftPct = (offsetMs / totalMs) * 100;
+      const widthPct = Math.max((durMs / totalMs) * 100, 0.5);
+
+      const row = document.createElement('div');
+      row.className = 'span-row';
+      const isError = s.status === 'ERROR';
+      row.innerHTML = `
+        <span class="span-name">${'&nbsp;'.repeat((s.parent_span_id ? 2 : 0))}${s.name}</span>
+        <span class="span-bar-track"><span class="span-bar ${kindClass(s.name)} ${isError ? 'error' : ''}" style="left:${leftPct}%;width:${widthPct}%"></span></span>
+        <span class="span-dur">${durMs.toFixed(1)}ms</span>
+      `;
+      const attrsDiv = document.createElement('div');
+      attrsDiv.className = 'attrs';
+      attrsDiv.textContent = JSON.stringify(s.attributes, null, 2);
+      row.onclick = (e) => { e.stopPropagation(); attrsDiv.classList.toggle('open'); };
+      spansDiv.appendChild(row);
+      spansDiv.appendChild(attrsDiv);
+    }
+    div.appendChild(spansDiv);
+    container.appendChild(div);
+  }
+
+  if (traceIds.length === 0) {
+    container.innerHTML = '<p>No traces match.</p>';
+  }
+}
+
+let allSpans = {};
+load().then(byTrace => {
+  allSpans = byTrace;
+  render(allSpans, '');
+}).catch(e => {
+  document.getElementById('traces').innerHTML =
+    '<p>Could not load spans.jsonl: ' + e + '<br>Run this page via <code>make trace-viewer</code> (serves this directory over HTTP) rather than opening the file directly.</p>';
+});
+
+document.getElementById('filter').addEventListener('input', (e) => render(allSpans, e.target.value));
+</script>
+</body>
+</html>

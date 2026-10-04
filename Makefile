@@ -10,7 +10,7 @@ KUBE_CONTEXT := kind-$(CLUSTER_NAME)
 VENV := $(PROJECT_ROOT)/.venv
 PY := $(VENV)/bin/python
 
-.PHONY: help preflight venv up down faults eval ui agent replay test clean
+.PHONY: help preflight venv up down faults eval ui agent executor replay trace-viewer test clean
 
 help:
 	@echo "incident-agent targets:"
@@ -23,6 +23,7 @@ help:
 	@echo "  make executor   - start the approval-gated executor service (requires 'make up')"
 	@echo "  make eval       - run the eval harness end to end, writes evals/report.md"
 	@echo "  make ui         - start the approval UI/API locally"
+	@echo "  make trace-viewer - serve the OpenTelemetry trace viewer (traces/viewer.html)"
 	@echo "  make replay     - serve the static replay site locally"
 	@echo "  make test       - run pytest"
 
@@ -75,6 +76,10 @@ executor: venv
 replay:
 	@echo "Serving replay/ at http://localhost:4000"
 	@cd replay && python3 -m http.server 4000
+
+trace-viewer:
+	@echo "Serving traces/ (viewer.html) at http://localhost:4200/viewer.html"
+	@cd traces && python3 -m http.server 4200
 
 test: venv
 	@$(PY) -m pytest -q

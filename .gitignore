@@ -32,6 +32,7 @@ evals/report.md
 
 # Traces
 traces/*.json
+traces/spans.jsonl
 !traces/.gitkeep
 
 # Executor state (generated, not committed in bulk)
