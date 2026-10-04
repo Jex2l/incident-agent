@@ -32,12 +32,17 @@ preflight:
 
 venv:
 	@if command -v uv >/dev/null 2>&1; then \
-		echo "Using uv to create venv + install deps..."; \
-		uv venv $(VENV); \
+		if [ ! -x "$(PY)" ]; then \
+			echo "Using uv to create venv..."; \
+			uv venv $(VENV); \
+		fi; \
+		echo "Installing deps with uv..."; \
 		uv pip install -p $(PY) -e ".[dev]"; \
 	else \
 		echo "uv not found, falling back to python3 -m venv + pip (slower)."; \
-		python3 -m venv $(VENV); \
+		if [ ! -x "$(PY)" ]; then \
+			python3 -m venv $(VENV); \
+		fi; \
 		$(PY) -m pip install --upgrade pip; \
 		$(PY) -m pip install -e ".[dev]"; \
 	fi
