@@ -16,10 +16,19 @@ app = FastAPI(title="incident-agent approval UI")
 
 
 def _esc(value) -> str:
+    """HTML-escape a value for safe interpolation into the hand-built markup
+    below (this UI has no template engine). Returns "" for None instead of
+    the literal string "None" so empty fields render as blank, not noise."""
     return html.escape(str(value)) if value is not None else ""
 
 
 def _proposal_card(p: dict) -> str:
+    """Render one proposal (as returned by the executor's /proposals API)
+    as an HTML card: pending proposals get Approve/Reject buttons that
+    POST back to this app's own /approve and /reject routes; already
+    decided proposals show their outcome instead (including whether an
+    approved action actually executed, since approval and execution are
+    separate steps on the executor side)."""
     status_color = {"pending": "#b58900", "approved": "#2aa198", "rejected": "#dc322f"}.get(p["status"], "#657b83")
     actions_html = ""
     if p["status"] == "pending":
@@ -62,6 +71,10 @@ def _proposal_card(p: dict) -> str:
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
+    """Approval queue landing page. Fetches the current proposal list from
+    the executor over HTTP (this process holds no proposal state itself)
+    and renders it server-side; there's no client-side JS, so every
+    approve/reject is a plain form POST followed by a redirect back here."""
     async with httpx.AsyncClient() as client:
         resp = await client.get(f"{EXECUTOR_URL}/proposals")
         resp.raise_for_status()
@@ -82,6 +95,11 @@ async def index():
 
 @app.post("/approve/{proposal_id}")
 async def approve(proposal_id: str):
+    """Forward the human's approval decision to the executor; this app does
+    not itself decide whether the action is allowed to run (that allowlist
+    check lives in the executor) and does not execute anything directly -
+    it is only a relay. 303 redirect back to "/" so a page refresh doesn't
+    resubmit the POST."""
     async with httpx.AsyncClient() as client:
         await client.post(f"{EXECUTOR_URL}/proposals/{proposal_id}/approve")
     return RedirectResponse(url="/", status_code=303)
@@ -89,6 +107,7 @@ async def approve(proposal_id: str):
 
 @app.post("/reject/{proposal_id}")
 async def reject(proposal_id: str):
+    """Forward a rejection to the executor; same relay-only role as approve()."""
     async with httpx.AsyncClient() as client:
         await client.post(f"{EXECUTOR_URL}/proposals/{proposal_id}/reject")
     return RedirectResponse(url="/", status_code=303)
@@ -96,4 +115,7 @@ async def reject(proposal_id: str):
 
 @app.get("/healthz")
 def healthz():
+    """Liveness check for this UI process only - does not probe the
+    executor, so a healthy UI can still show stale/unreachable data if the
+    executor is down (the index route's own httpx call would fail there)."""
     return {"status": "ok"}

@@ -1,4 +1,24 @@
-"""System prompt encoding the agent's investigation method."""
+"""System prompt encoding the agent's investigation method.
+
+This is the only place "how to investigate" is specified - there's no
+separate planner, no hardcoded decision tree. The prompt gives the model an
+ordered method (alert -> blast radius -> metrics -> logs -> events ->
+runbooks -> hypothesis -> verify), lists the exact tool names available, and
+spells out the required JSON output shape including a CLOSED list of
+root_cause_label values.
+
+That closed list is a direct result of Phase 8's eval failure: with only
+free-text examples in the prompt and a `{"type": "string"}` schema (see
+agent/schema.py), the model invented plausible-looking labels straight from
+the alert name or a variable it noticed in evidence (e.g.
+"crash_loop_backoff", "force_crash_on_boot") instead of picking a real root
+cause - every one of those was schema-valid, so nothing caught it until the
+eval scorer compared it against ground truth. Prompt + schema were fixed
+together: the prompt tells the model the exact closed vocabulary, and
+agent/schema.py's enum constraint makes an out-of-vocabulary answer fail
+validation and go through the orchestrator's bounded "fix your output" retry
+instead of silently shipping wrong.
+"""
 
 SYSTEM_PROMPT = """\
 You are an on-call incident triage agent investigating a Kubernetes alert. \

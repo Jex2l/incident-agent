@@ -37,6 +37,16 @@ RESET_PATCH = {
 
 
 def inject():
+    """Patch kafka-consumer's Deployment to set CONSUMER_STOPPED=true, after
+    recording ground truth.
+
+    The consumer stays connected to its consumer group (so it doesn't look
+    crashed or get flagged by liveness checks) but stops polling for
+    messages, while kafka-producer keeps producing normally - so consumer lag
+    grows steadily until KafkaConsumerLagHigh fires. This is why the scenario
+    is given a longer timeout in run() than the other faults: lag has to
+    accumulate past the alert threshold rather than trip instantly.
+    """
     run_id, _ = lib.record_fault_start(
         SCENARIO, COMPONENT, ROOT_CAUSE_LABEL,
         {"consumer_stopped": True, "expected_alerts": EXPECTED_ALERTS},
@@ -46,6 +56,10 @@ def inject():
 
 
 def reset():
+    """Set CONSUMER_STOPPED back to false (plain overwrite, not a delete
+    patch - see note above INJECT_PATCH), wait for the rollout, and mark
+    ground truth resolved.
+    """
     lib.patch_deployment(COMPONENT, RESET_PATCH)
     lib.wait_rollout(COMPONENT)
     lib.record_fault_end(SCENARIO)
@@ -53,6 +67,10 @@ def reset():
 
 
 def run() -> bool:
+    """Full fault cycle: inject, poll up to 7 min (lag needs time to build up)
+    for KafkaConsumerLagHigh on the webhook receiver, reset regardless of
+    outcome, and report pass/fail.
+    """
     since = lib.now_iso()
     inject()
     print(f"[{SCENARIO}] waiting up to 7 min for {EXPECTED_ALERTS}...")

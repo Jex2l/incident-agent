@@ -46,6 +46,14 @@ RESET_PATCH = {
 
 
 def inject():
+    """Patch cart's Deployment: add MEMORY_BALLAST_MB=300 and lower its memory
+    limit to 64Mi (below the ballast size), and record ground truth first.
+
+    The ballast env var tells cart's app code to allocate ~300Mi of memory on
+    boot; since the container's limit is only 64Mi, the kubelet kills it for
+    exceeding its cgroup memory limit almost immediately and deterministically,
+    which should fire PodOOMKilled.
+    """
     run_id, _ = lib.record_fault_start(
         SCENARIO, COMPONENT, ROOT_CAUSE_LABEL,
         {"memory_ballast_mb": 300, "memory_limit": "64Mi", "expected_alerts": EXPECTED_ALERTS},
@@ -55,6 +63,10 @@ def inject():
 
 
 def reset():
+    """Remove MEMORY_BALLAST_MB (via $patch: delete) and restore cart's
+    original memory limit/request, then wait for the rollout and mark the
+    ground-truth record resolved.
+    """
     lib.patch_deployment(COMPONENT, RESET_PATCH)
     lib.wait_rollout(COMPONENT)
     lib.record_fault_end(SCENARIO)
@@ -62,6 +74,9 @@ def reset():
 
 
 def run() -> bool:
+    """Full fault cycle: inject, poll up to 5 min for PodOOMKilled on the
+    webhook receiver, reset regardless of outcome, and report pass/fail.
+    """
     since = lib.now_iso()
     inject()
     print(f"[{SCENARIO}] waiting up to 5 min for {EXPECTED_ALERTS}...")

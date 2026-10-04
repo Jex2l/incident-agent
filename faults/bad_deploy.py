@@ -24,6 +24,18 @@ BROKEN_IMAGE = "incident-agent/cart:broken-tag-never-built"
 
 
 def inject():
+    """Scale cart to 0, set its image to a tag that was never built/loaded
+    into the kind nodes, then scale back to 1, after recording ground truth.
+
+    Scaling to 0 before swapping the image (rather than just `set image` on
+    the running deployment) avoids a rolling update, where Kubernetes would
+    keep the old, healthy pod serving traffic alongside the new pod stuck in
+    ImagePullBackOff - that would make the deployment still look available.
+    Scaling to 0 first guarantees the only pod that comes up is the broken
+    one, so the deployment's available replica count reliably drops to 0 and
+    DeploymentUnavailable should fire. The `time.sleep(3)` gives the scale-down
+    a moment to actually terminate the old pod before the image is swapped.
+    """
     run_id, _ = lib.record_fault_start(
         SCENARIO, COMPONENT, ROOT_CAUSE_LABEL,
         {"broken_image": BROKEN_IMAGE, "expected_alerts": EXPECTED_ALERTS},
@@ -36,6 +48,16 @@ def inject():
 
 
 def reset():
+    """Re-apply the pristine cart manifest to restore the original image and
+    replica count, wait for the rollout, and mark the ground-truth record
+    resolved.
+
+    Unlike the other faults, this one's only change (the image tag, via
+    `kubectl set image`) IS reflected in the Deployment's
+    last-applied-configuration annotation, so a plain `kubectl apply` of the
+    original manifest correctly reverts it - no `$patch: delete` strategic
+    patch is needed here.
+    """
     lib.kubectl("-n", lib.NAMESPACE, "apply", "-f", str(lib.ROOT / MANIFEST))
     lib.wait_rollout(COMPONENT)
     lib.record_fault_end(SCENARIO)
@@ -43,6 +65,9 @@ def reset():
 
 
 def run() -> bool:
+    """Full fault cycle: inject, poll up to 5 min for DeploymentUnavailable on
+    the webhook receiver, reset regardless of outcome, and report pass/fail.
+    """
     since = lib.now_iso()
     inject()
     print(f"[{SCENARIO}] waiting up to 5 min for {EXPECTED_ALERTS}...")

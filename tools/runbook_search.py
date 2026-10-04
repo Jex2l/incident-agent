@@ -31,6 +31,13 @@ _TITLE_RE = re.compile(r"^#\s+(.+)$", re.MULTILINE)
 
 
 def _parse_runbook(path: Path) -> dict:
+    """Parse a runbooks/*.md file into its indexable parts: an optional
+    YAML-ish frontmatter block (only `root_cause_label:` is extracted - a
+    hand-rolled key:value line parser is used instead of pulling in a YAML
+    library for one field), a title (first markdown H1, falling back to the
+    filename stem if none is present), and the body content below the
+    frontmatter, which is what actually gets embedded/indexed for search.
+    """
     text = path.read_text()
     root_cause_label = None
     m = _FRONTMATTER_RE.match(text)
@@ -48,6 +55,13 @@ def _parse_runbook(path: Path) -> dict:
 
 
 def _embed(text: str) -> list[float] | None:
+    """Request an embedding vector for `text` from the local Ollama
+    instance. Returns None (rather than raising) on any failure - Ollama not
+    running, the model not pulled, a malformed response - so callers
+    (build_index, _embedding_search) can treat "no embedding available" as a
+    normal, expected condition and fall back to BM25, instead of the whole
+    tool crashing because an optional local dependency isn't present.
+    """
     try:
         resp = httpx.post(
             f"{OLLAMA_HOST}/api/embeddings",
@@ -71,6 +85,10 @@ def build_index(force: bool = False) -> dict:
     docs = [_parse_runbook(p) for p in runbook_files]
 
     conn = sqlite3.connect(DB_PATH)
+    # DROP+CREATE rather than an incremental upsert: the runbook corpus is
+    # small and rebuilt infrequently (only when missing or force=True), so
+    # a full rebuild is simpler and avoids having to reconcile deleted/
+    # renamed runbook files against stale rows.
     conn.execute("DROP TABLE IF EXISTS runbooks")
     conn.execute(
         """CREATE TABLE runbooks (
@@ -80,6 +98,10 @@ def build_index(force: bool = False) -> dict:
     )
     embed_mode = False
     for doc in docs:
+        # Each document attempts its own embedding call; if Ollama is down
+        # this just leaves `embedding` NULL for that row rather than failing
+        # the whole index build - search falls back to BM25 using the
+        # `content` column, which is always populated regardless.
         embedding = _embed(doc["content"])
         if embedding is not None:
             embed_mode = True
@@ -94,11 +116,20 @@ def build_index(force: bool = False) -> dict:
 
 
 def _cosine(a: np.ndarray, b: np.ndarray) -> float:
+    """Cosine similarity between two embedding vectors; 0.0 if either is a
+    zero vector (denom would be 0), since cosine similarity is undefined
+    there and this avoids a divide-by-zero."""
     denom = (np.linalg.norm(a) * np.linalg.norm(b))
     return float(np.dot(a, b) / denom) if denom else 0.0
 
 
 def _bm25_search(query: str, rows: list[sqlite3.Row], top_k: int) -> list[tuple[sqlite3.Row, float]]:
+    """Keyword search fallback using BM25 (Okapi variant) over whitespace-
+    lowercased tokens. This is the fallback path used when embeddings aren't
+    available (Ollama unreachable, model not pulled): it's pure Python with
+    no network dependency, so it always works as long as the index has rows,
+    at the cost of being keyword-literal rather than semantic.
+    """
     from rank_bm25 import BM25Okapi
 
     corpus = [r["content"].lower().split() for r in rows]
@@ -109,6 +140,14 @@ def _bm25_search(query: str, rows: list[sqlite3.Row], top_k: int) -> list[tuple[
 
 
 def _embedding_search(query: str, rows: list[sqlite3.Row], top_k: int) -> list[tuple[sqlite3.Row, float]] | None:
+    """Semantic search: embed the query with the same Ollama model used at
+    index time, then rank stored runbooks by cosine similarity. Returns None
+    (rather than an empty list) whenever embedding search isn't actually
+    usable - the query couldn't be embedded, or no row in the index has a
+    stored embedding (e.g. the index was built while Ollama was down) - so
+    the caller can distinguish "no results" from "this mode isn't available,
+    fall back to BM25".
+    """
     query_embedding = _embed(query)
     if query_embedding is None:
         return None
@@ -125,6 +164,13 @@ def _embedding_search(query: str, rows: list[sqlite3.Row], top_k: int) -> list[t
 
 
 def search_runbooks(query: str, top_k: int = 3) -> dict:
+    """Search the runbook library for the `top_k` entries most relevant to
+    `query`. Prefers embedding similarity (semantic match) and transparently
+    falls back to BM25 keyword search (see _bm25_search) when embeddings
+    aren't available for this query or this index - callers get the same
+    result shape either way, with `mode` reporting which path was actually
+    used ("embedding", "bm25", or "none" if the index is empty).
+    """
     build_index()  # lazy build on first use
     top_k = min(top_k, MAX_RESULTS)
 
@@ -156,6 +202,7 @@ def search_runbooks(query: str, top_k: int = 3) -> dict:
 
 
 def build_server():
+    """Wire search_runbooks up as an MCP tool for the agent to call."""
     from mcp.server.fastmcp import FastMCP
 
     mcp = FastMCP("runbook_search")
@@ -171,6 +218,12 @@ def build_server():
 
 
 if __name__ == "__main__":
+    # Unlike the other three tool modules, this one also doubles as a CLI
+    # for offline index maintenance/debugging (--build-index, --search)
+    # without having to go through the MCP server - useful for rebuilding
+    # the index after editing runbooks, or sanity-checking search results by
+    # hand. With no flags given it falls back to running as a normal MCP
+    # server over stdio, same as the others.
     import argparse
 
     parser = argparse.ArgumentParser()

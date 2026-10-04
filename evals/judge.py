@@ -11,6 +11,11 @@ from agent.orchestrator import _try_parse_json
 
 JUDGE_MODEL = os.environ.get("EVAL_JUDGE_MODEL", "qwen2.5:3b")
 
+# Deliberately scores explanation *quality* (grounded/clarity/actionability),
+# not whether the label is correct - exact-match correctness is scorer.py's
+# job and is already an objective comparison against scenarios.yaml. This
+# prompt exists to catch a model that gets the right label for the wrong
+# (or no) reason.
 JUDGE_PROMPT = """\
 You are grading an on-call incident triage agent's explanation, not its final \
 label accuracy (that's scored separately by exact match against ground truth). \
@@ -29,9 +34,29 @@ Respond with ONLY a JSON object: {"grounded": <1-5>, "clarity": <1-5>, \
 
 
 async def judge_result(alert_summary: dict, result: dict, model_under_test: str) -> dict | None:
-    """Returns None (not an error) if judging is skipped - e.g. the judge
-    model is the same as the model under test, which would defeat the
-    point of an independent check."""
+    """Ask a second, smaller local model to grade the agent's hypothesis
+    text for explanation quality. Optional and off by default
+    (EVAL_LLM_JUDGE=false in runner.py) - fully implemented but not
+    exercised in the eval runs actually documented in evals/report.md, for
+    time/cost reasons (an extra LLM call per scored run on top of an
+    already ~5-hour matrix).
+
+    Args:
+        alert_summary: the normalized alert dict passed to the pipeline
+            under test, included so the judge has the same context.
+        result: the pipeline's schema-shaped output dict (hypothesis,
+            evidence, status, etc.) to be graded.
+        model_under_test: name of the model that produced `result`, used
+            only to decide whether judging should be skipped below.
+
+    Returns:
+        None (not an error) if judging is skipped - e.g. the judge
+        model is the same as the model under test, which would defeat the
+        point of an independent check. Otherwise a dict with
+        "grounded"/"clarity"/"actionability" (1-5) and "notes", or an
+        {"error": ...} dict if the judge model's own output wasn't valid
+        JSON.
+    """
     if JUDGE_MODEL == model_under_test:
         return None
 

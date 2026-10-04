@@ -19,6 +19,13 @@ WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "http://localhost:8000")
 
 
 def kubectl(*args, check=True):
+    """Run a kubectl command against the fixed kind context and return stdout.
+
+    Every fault script shells out through this one wrapper (instead of the
+    kubernetes python client) so all cluster mutations are visible as plain
+    kubectl invocations in logs, and so `check` gives callers an easy way to
+    opt out of raising on non-zero exit (e.g. for best-effort cleanup).
+    """
     cmd = ["kubectl", "--context", KUBE_CONTEXT] + list(args)
     result = subprocess.run(cmd, capture_output=True, text=True)
     if check and result.returncode != 0:
@@ -31,6 +38,14 @@ def now_iso() -> str:
 
 
 def record_fault_start(scenario: str, component: str, root_cause_label: str, details: dict | None = None) -> tuple[str, Path]:
+    """Write a ground-truth record to evals/runs/ marking a fault as just-injected.
+
+    This is the timestamp evals/ later scores the agent's investigation
+    against (how fast it found the right component/root cause relative to
+    `injected_at`). Called at the start of inject(), before the cluster is
+    actually mutated, so the clock starts as close as possible to the real
+    fault onset.
+    """
     run_id = f"{scenario}-{int(time.time())}"
     record = {
         "run_id": run_id,
@@ -50,6 +65,11 @@ def record_fault_start(scenario: str, component: str, root_cause_label: str, det
 
 
 def latest_active_record(scenario: str) -> tuple[Path, dict] | tuple[None, None]:
+    """Find the most recently started run for `scenario` that hasn't been resolved yet.
+
+    Sorting filenames in reverse works because run_id embeds a unix
+    timestamp, so lexicographic order matches chronological order.
+    """
     for path in sorted(RUNS_DIR.glob(f"{scenario}-*.json"), reverse=True):
         record = json.loads(path.read_text())
         if record.get("status") == "active":
@@ -58,6 +78,7 @@ def latest_active_record(scenario: str) -> tuple[Path, dict] | tuple[None, None]
 
 
 def record_fault_end(scenario: str) -> Path | None:
+    """Mark the active ground-truth record for `scenario` as resolved, stamping reset_at."""
     path, record = latest_active_record(scenario)
     if path is None:
         print(f"[fault] WARNING: no active ground-truth record found for '{scenario}'")
@@ -78,14 +99,21 @@ def wait_for_alert(alertnames: list[str], since_iso: str, timeout_s: int = 300, 
             with urllib.request.urlopen(f"{WEBHOOK_URL}/alerts?limit=50", timeout=5) as resp:
                 data = json.loads(resp.read())
         except Exception as e:
+            # Webhook receiver may not be reachable yet (e.g. still starting);
+            # treat a failed poll as "no alerts this round" rather than aborting.
             print(f"[fault] webhook poll failed (will retry): {e}")
             data = {"alerts": []}
         for rec in data.get("alerts", []):
+            # received_at filters out alerts from a previous run of the same
+            # scenario that are still sitting in the webhook receiver's buffer.
             if rec["received_at"] < since_ts:
                 continue
             payload = rec["payload"]
             if payload.get("status") != "firing":
                 continue
+            # Alertmanager batches multiple alerts per webhook payload; only
+            # match one whose own status is firing and name is one we expect
+            # (a payload can be "firing" overall while bundling a resolved one).
             for alert in payload.get("alerts", []):
                 if alert.get("status") == "firing" and alert["labels"].get("alertname") in alertnames:
                     return alert
@@ -94,6 +122,11 @@ def wait_for_alert(alertnames: list[str], since_iso: str, timeout_s: int = 300, 
 
 
 def wait_rollout(deployment: str, timeout_s: int = 120):
+    """Block until `deployment`'s rollout finishes, via `kubectl rollout status`.
+
+    Used after reset() patches to confirm the deployment actually becomes
+    healthy again rather than just assuming the patch succeeded.
+    """
     kubectl("-n", NAMESPACE, "rollout", "status", f"deployment/{deployment}", f"--timeout={timeout_s}s")
 
 

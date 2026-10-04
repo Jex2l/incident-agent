@@ -48,6 +48,11 @@ REFERENCE_PRICE_PER_1K_COMPLETION_TOKENS = 0.0015
 
 
 def load_fault_module(name: str):
+    """Dynamically load faults/<name>.py by file path (rather than a normal
+    import) so scenario fault modules don't need to live in an importable
+    package - each scenario in scenarios.yaml just names a filename under
+    faults/. Returns the loaded module, which is expected to expose
+    inject() and reset()."""
     spec = importlib.util.spec_from_file_location(name, ROOT / "faults" / f"{name}.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -55,12 +60,32 @@ def load_fault_module(name: str):
 
 
 def _reset_with_retry(fault_mod, retries: int = 4, delay_s: float = 20.0):
-    """kubectl calls transiently fail under the CPU contention this project
+    """Call fault_mod.reset(), retrying on failure with a fixed delay.
+
+    kubectl calls transiently fail under the CPU contention this project
     is known to hit when the cluster and local LLM inference compete for
     cores (documented in docs/DECISIONS.md, Phase 4/6/7) - a bare
     fault_mod.reset() crashing the whole harness on one flaky TLS handshake
     would throw away every result collected so far. Retry with backoff; if
-    all retries fail, log loudly and move on rather than losing the run."""
+    all retries fail, log loudly and move on rather than losing the run.
+    This was added after exactly that happened mid-run in practice.
+
+    Args:
+        fault_mod: a loaded fault module (see load_fault_module()) whose
+            reset() clears the injected fault so the next scenario/run
+            starts clean.
+        retries: max attempts before giving up (not "extra" retries after
+            the first try - the loop below runs at most this many times
+            total).
+        delay_s: fixed (non-exponential) sleep between attempts; a flaky
+            TLS handshake doesn't need a growing backoff, just enough time
+            for the transient condition to clear.
+
+    Returns:
+        True if reset() eventually succeeded, False if every attempt
+        failed (the caller logs this but deliberately keeps going rather
+        than aborting the whole eval matrix).
+    """
     last_err = None
     for attempt in range(1, retries + 1):
         try:
@@ -70,12 +95,41 @@ def _reset_with_retry(fault_mod, retries: int = 4, delay_s: float = 20.0):
             last_err = e
             print(f"  reset attempt {attempt}/{retries} failed ({type(e).__name__}: {e}); retrying in {delay_s}s...")
             time.sleep(delay_s)
+    # All retries exhausted: the fault may still be active in the cluster,
+    # which will skew whatever scenario runs next, but losing the entire
+    # harness run (and every already-scored result in results.json) over
+    # one stuck fault is worse than that skew - so we log loudly and move on.
     print(f"  WARNING: reset failed after {retries} attempts ({last_err}) - fault may still be active, "
           f"continuing to the next run anyway rather than losing all accumulated results.")
     return False
 
 
 async def run_one(scenario: dict, toolset: ToolSet, run_index: int) -> dict:
+    """Run a single (scenario, run_index) trial end-to-end against the real
+    cluster: inject the fault, wait for the real Prometheus alert to fire,
+    run the full agent (agent/orchestrator.py's investigate()) and
+    optionally the baseline pipeline on that same alert, score each against
+    scenarios.yaml ground truth, then reset the fault regardless of outcome.
+
+    This talks to real infrastructure the whole way through - there is no
+    mocking here, which is also why so much of the error handling below
+    exists: any of the fault injection, the alert wait, the agent call, or
+    the trace file read can fail for real infra reasons, and one bad run
+    must not take down the rest of the matrix.
+
+    Args:
+        scenario: one entry from scenarios.yaml (name, fault_module,
+            root_cause_label, component, expected_alerts).
+        toolset: shared MCP ToolSet passed through to both pipelines.
+        run_index: 0-based repeat index, used only for unique incident ids
+            and result bookkeeping.
+
+    Returns:
+        dict with "scenario", "run_index", "alert_fired", and - when the
+        alert fired - "agent" and optionally "baseline" (each a
+        scorer.score_run() dict), plus "reset_ok" and an "error" key if
+        anything went wrong along the way.
+    """
     fault_mod = load_fault_module(scenario["fault_module"])
     since = fault_lib.now_iso()
     print(f"  injecting {scenario['fault_module']}...")
@@ -146,6 +200,19 @@ async def run_one(scenario: dict, toolset: ToolSet, run_index: int) -> dict:
 
 
 async def main_async() -> dict:
+    """Orchestrate the full eval matrix: every scenario in scenarios.yaml,
+    repeated RUNS_PER_SCENARIO times each, sharing one ToolSet/MCP
+    connection across the whole run. Writes evals/results.json to disk
+    after every single run (not just at the end) so a crash partway
+    through the ~5-hour matrix (at the code default of 5 runs/scenario;
+    the actual documented report used 1 due to hardware runtime) still
+    leaves every completed run's results on disk.
+
+    Returns:
+        the same results dict that ends up written to results.json:
+        run config (model, runs_per_scenario, flags), start/completion
+        timestamps, and the "runs" list of run_one() records.
+    """
     scenarios = yaml.safe_load(SCENARIOS_PATH.read_text())["scenarios"]
     results = {
         "model_under_test": MODEL_UNDER_TEST,
@@ -165,7 +232,9 @@ async def main_async() -> dict:
                 except Exception as e:
                     # Belt and suspenders beyond run_one()'s own try/except:
                     # nothing should be able to take down the whole harness
-                    # and lose every previously-collected result.
+                    # and lose every previously-collected result. This catches
+                    # anything run_one() itself didn't handle (e.g. a failure
+                    # in load_fault_module() before its own try block starts).
                     print(f"  FATAL in run_one, recording as a miss and continuing: {type(e).__name__}: {e}")
                     record = {"scenario": scenario["name"], "run_index": i, "alert_fired": False,
                               "agent": None, "baseline": None, "error": f"harness error: {type(e).__name__}: {e}"}
@@ -178,6 +247,22 @@ async def main_async() -> dict:
 
 
 def build_report(results: dict) -> str:
+    """Render the final results dict (as produced by main_async(), or
+    loaded back from results.json) into the evals/report.md markdown
+    document: overall accuracy table (agent vs. baseline), per-scenario
+    accuracy, failure mode tally, token/cost accounting, and the
+    LLM-judge section if it was run. Every number here is read directly
+    from `results` - nothing in this function is hand-edited or
+    fabricated, by design (see module docstring).
+
+    Args:
+        results: the dict returned by main_async() / stored in
+            results.json.
+
+    Returns:
+        the full report as a markdown string, ready to write to
+        evals/report.md.
+    """
     agent_runs = [r["agent"] for r in results["runs"] if r.get("agent")]
     baseline_runs = [r["baseline"] for r in results["runs"] if r.get("baseline")]
     missed = [r for r in results["runs"] if not r.get("alert_fired")]
@@ -272,6 +357,8 @@ def build_report(results: dict) -> str:
 
 
 def main():
+    """CLI entry point (`make eval`): run the full matrix, build the
+    report, and write both results.json and report.md."""
     results = asyncio.run(main_async())
     report = build_report(results)
     REPORT_PATH.write_text(report)

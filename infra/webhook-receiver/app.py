@@ -19,11 +19,19 @@ app = FastAPI(title="webhook-receiver")
 
 @app.get("/healthz")
 def healthz():
+    """Liveness probe target."""
     return {"status": "ok"}
 
 
 @app.post("/alerts")
 async def receive_alert(request: Request):
+    """Alertmanager webhook target: accept a notification payload and append
+    it, as-is, to an append-only JSONL log. This is intentionally the whole
+    implementation - faults/lib.py's wait_for_alert() polls the /alerts
+    endpoint below to confirm a fault actually produced the alert it was
+    supposed to, so this just needs to durably capture what Alertmanager
+    sent without reshaping it.
+    """
     payload = await request.json()
     record = {"received_at": time.time(), "payload": payload}
     print(f"[webhook-receiver] received alert group with {len(payload.get('alerts', []))} alert(s)")
@@ -34,6 +42,7 @@ async def receive_alert(request: Request):
 
 @app.get("/alerts")
 def list_alerts(limit: int = 20):
+    """Return the most recent `limit` logged alert payloads, most-recent-last."""
     if not LOG_PATH.exists():
         return {"alerts": []}
     # errors="replace": a prior ungraceful shutdown (observed in practice -

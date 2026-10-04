@@ -44,6 +44,28 @@ async def investigate_baseline(
     llm: LLMProvider | None = None,
     incident_id: str | None = None,
 ) -> dict:
+    """Run the "dumb" comparison pipeline for one alert: always the same 5
+    tool calls regardless of what the alert actually is, then exactly one
+    LLM call with no retries and no follow-up turns to turn that evidence
+    into a hypothesis. Contrast with agent/orchestrator.py's investigate(),
+    which adaptively chooses tools and can take multiple turns - this
+    baseline exists purely so the eval report can show whether that
+    adaptiveness is earning its larger token/time budget.
+
+    Args:
+        alert_summary: the normalized alert dict (same shape the real agent
+            receives from agent/webhook.py's _alert_summary()).
+        toolset: shared MCP ToolSet used to make the fixed tool calls.
+        llm: provider override for testing; defaults to the configured
+            production provider.
+        incident_id: optional id for tracing/logging; a baseline-prefixed
+            timestamp id is generated if not given.
+
+    Returns:
+        dict with keys: "result" (the schema-validated or inconclusive
+        output dict), "tool_call_count" (always 5), "prompt_tokens",
+        "completion_tokens", and "elapsed_s".
+    """
     llm = llm or get_default_provider()
     incident_id = incident_id or f"baseline-{int(time.time())}"
     namespace = alert_summary.get("namespace") or "incident-agent"
@@ -57,6 +79,10 @@ async def investigate_baseline(
         evidence = []
         tool_calls_made = 0
 
+        # The fixed set: no branching on alertname or namespace contents,
+        # unlike the real agent's adaptive tool selection - this is the
+        # whole point of the baseline, so don't "improve" it by making it
+        # smarter about which tools to call.
         fixed_calls = [
             ("kube_list_pods", {"namespace": namespace}),
             ("kube_list_events", {"namespace": namespace}),
@@ -78,6 +104,11 @@ async def investigate_baseline(
         response = await llm.chat(messages)  # no tools - exactly one call, no loop
         parsed = _try_parse_json(response.content or "")
 
+        # Unlike the real agent, there is no retry-on-bad-output here: a
+        # malformed or schema-invalid response is recorded as inconclusive
+        # immediately. The reason string is embedded in the hypothesis text
+        # so scorer.classify_failure_mode() can later tell this failure mode
+        # apart from a genuinely wrong diagnosis.
         if parsed is None:
             result = inconclusive_result("baseline: model did not produce valid JSON (no retry in baseline)", [
                 {"tool": e["tool"], "query": e["query"], "summary": "fixed evidence gathered"} for e in evidence

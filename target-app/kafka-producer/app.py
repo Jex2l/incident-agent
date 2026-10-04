@@ -1,4 +1,8 @@
-"""Produces synthetic order events to Redpanda at a steady rate."""
+"""Kafka producer service: produces synthetic order events to Redpanda at a
+steady rate, so kafka-consumer has a continuous stream to process and so
+consumer lag faults have real backlog to build up against rather than a
+contrived counter.
+"""
 import json
 import os
 import random
@@ -18,6 +22,11 @@ ERRORS = Counter("kafka_producer_errors_total", "Producer errors", ["topic"])
 
 
 def connect(retries: int = 30, delay_s: float = 2.0) -> KafkaProducer:
+    """Retry connecting to the Kafka/Redpanda broker on startup, since the
+    broker container may still be coming up when this service starts in
+    docker-compose/k8s and a single failed connection attempt shouldn't be
+    fatal.
+    """
     last_err = None
     for _ in range(retries):
         try:
@@ -34,6 +43,11 @@ def connect(retries: int = 30, delay_s: float = 2.0) -> KafkaProducer:
 
 
 def main():
+    """Connect, then loop forever producing one synthetic order event per
+    PRODUCE_INTERVAL_S. Runs as a plain blocking loop (not FastAPI) since
+    this service has no inbound HTTP API of its own, just a Prometheus
+    metrics endpoint exposed via start_http_server.
+    """
     start_http_server(METRICS_PORT)
     producer = connect()
     order_id = 0

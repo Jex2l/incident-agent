@@ -35,6 +35,13 @@ _lock = threading.Lock()
 
 
 def truncate(value, max_chars: int = MAX_ATTR_CHARS) -> str:
+    """Convert any value to a string safe to attach as a span attribute,
+    cutting it off (with a marker showing the original length) past
+    max_chars. Used on every LLM input/output preview and tool
+    argument/result so one verbose call can't bloat spans.jsonl or make the
+    trace viewer unusable - non-string values are JSON-encoded first so
+    dicts/lists get a readable preview too.
+    """
     text = value if isinstance(value, str) else json.dumps(value, default=str)
     if len(text) <= max_chars:
         return text
@@ -47,10 +54,16 @@ class JSONFileSpanExporter(SpanExporter):
     groups spans by trace_id, one trace per investigation."""
 
     def export(self, spans) -> SpanExportResult:
+        # A lock guards the append since SimpleSpanProcessor can call
+        # export() from whatever thread ends a span - without it, concurrent
+        # writes could interleave and corrupt a line.
         with _lock, SPANS_PATH.open("a") as f:
             for span in spans:
                 ctx = span.get_span_context()
                 parent = span.parent
+                # IDs are stored as fixed-width hex strings (the OTel wire
+                # format) so the viewer can match parent_span_id to span_id
+                # across lines without worrying about int vs hex mismatches.
                 record = {
                     "trace_id": format(ctx.trace_id, "032x"),
                     "span_id": format(ctx.span_id, "016x"),
@@ -58,6 +71,8 @@ class JSONFileSpanExporter(SpanExporter):
                     "name": span.name,
                     "start_time_ns": span.start_time,
                     "end_time_ns": span.end_time,
+                    # duration_ms is derived here, once, rather than making
+                    # the viewer redo the ns-to-ms math per span.
                     "duration_ms": round((span.end_time - span.start_time) / 1e6, 2) if span.end_time else None,
                     "status": span.status.status_code.name,
                     "attributes": dict(span.attributes or {}),
@@ -66,6 +81,9 @@ class JSONFileSpanExporter(SpanExporter):
         return SpanExportResult.SUCCESS
 
     def shutdown(self):
+        # Required by the SpanExporter interface; nothing to flush/close
+        # since every export() call already opens, writes, and closes the
+        # file immediately.
         pass
 
 

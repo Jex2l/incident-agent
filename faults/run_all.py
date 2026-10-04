@@ -14,6 +14,10 @@ SCENARIOS = ["oom_kill", "bad_deploy", "cpu_throttle", "kafka_lag", "crash_loop"
 
 
 def load(name: str):
+    """Import a fault script (e.g. oom_kill.py) by file path as a standalone
+    module, rather than via a package-relative import, since faults/ isn't
+    necessarily on sys.path when this script is invoked directly.
+    """
     spec = importlib.util.spec_from_file_location(name, ROOT / f"{name}.py")
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
@@ -21,6 +25,10 @@ def load(name: str):
 
 
 def main():
+    """Run every scenario's run() in sequence, catching exceptions per
+    scenario so one failing fault doesn't abort the rest of the suite, then
+    print a pass/fail summary and exit non-zero if any scenario failed.
+    """
     results = {}
     for name in SCENARIOS:
         print(f"\n{'=' * 70}\nRunning fault scenario: {name}\n{'=' * 70}")

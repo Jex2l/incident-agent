@@ -23,7 +23,20 @@ from kubernetes import client, config
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from tools.common import cap_list
 
+# Which kubeconfig context to talk to. Defaults to the local kind cluster
+# used for development/testing of this agent.
 KUBE_CONTEXT = os.environ.get("KUBE_CONTEXT", "kind-incident-agent")
+
+# NAMESPACE is where the incident-agent-reader ServiceAccount itself lives
+# (created by infra/rbac/) - it is fixed and is intentionally NOT the same
+# thing as the `namespace` parameter accepted by list_pods/get_pod_logs/etc.
+# below. Those functions let the LLM ask about any namespace it wants to
+# investigate (e.g. "checkout" or "payments"); NAMESPACE only controls where
+# `kubectl create token` looks up the ServiceAccount to mint a token for.
+# Conflating the two was a real bug here previously: if the query namespace
+# leaked into the token-minting call, token minting would fail (or mint for
+# the wrong SA) whenever the agent investigated a namespace other than the
+# one the ServiceAccount lives in. Keep these decoupled.
 NAMESPACE = os.environ.get("INCIDENT_AGENT_NAMESPACE", "incident-agent")
 SERVICE_ACCOUNT = os.environ.get("KUBE_READ_SERVICE_ACCOUNT", "incident-agent-reader")
 MAX_ITEMS = int(os.environ.get("KUBE_READ_MAX_ITEMS", "20"))
@@ -31,10 +44,21 @@ MAX_LOG_LINES = int(os.environ.get("KUBE_READ_MAX_LOG_LINES", "100"))
 
 
 def _get_sa_token(service_account: str = SERVICE_ACCOUNT, duration: str = "1h") -> str:
-    # The ServiceAccount always lives in NAMESPACE (where infra/rbac/ created
-    # it) - this is NOT the namespace a tool call queries. A pod/log/event
-    # listing can target any namespace the model asks for (list_pods(namespace=...)
-    # etc.), but the token must always be minted from where the SA actually is.
+    """Mint a short-lived bearer token for the read-only ServiceAccount via
+    `kubectl create token` (the TokenRequest API under the hood), rather than
+    using any long-lived static secret.
+
+    Safety-critical detail: this call is hardcoded to `-n NAMESPACE`, NOT a
+    namespace supplied by the caller or the LLM. The ServiceAccount always
+    lives in NAMESPACE (where infra/rbac/ provisioned it) regardless of which
+    namespace a given tool call is investigating. A pod/log/event listing can
+    target any namespace the model asks for (list_pods(namespace=...) etc.),
+    but the identity used to make that call must always be minted from where
+    the SA actually is - otherwise token minting breaks (or silently targets
+    the wrong SA) the moment the agent looks outside its home namespace.
+    The token is short-lived (1h duration) so a leaked/logged token has a
+    bounded blast radius.
+    """
     result = subprocess.run(
         ["kubectl", "--context", KUBE_CONTEXT, "-n", NAMESPACE, "create", "token", service_account, f"--duration={duration}"],
         capture_output=True, text=True,
@@ -46,7 +70,18 @@ def _get_sa_token(service_account: str = SERVICE_ACCOUNT, duration: str = "1h") 
 
 def get_restricted_api_client(service_account: str = SERVICE_ACCOUNT) -> client.ApiClient:
     """Build an ApiClient authenticated as the read-only ServiceAccount's
-    own token - NOT the admin kubeconfig identity used to mint it."""
+    own token - NOT the admin kubeconfig identity used to mint it.
+
+    load_kube_config() is only used to discover cluster connection details
+    (host, CA cert) from the local kubeconfig context; the actual
+    authorization on every request made with this client comes from the
+    freshly minted SA bearer token below, not from whatever identity
+    kubectl/the kubeconfig would otherwise use. That SA's Role (see
+    infra/rbac/) grants only get/list/watch on a narrow set of resources, so
+    even if this code were buggy or the LLM tried to request a write, the
+    API server itself would reject it with 403 - the defense is in
+    infrastructure, not in this function's logic.
+    """
     config.load_kube_config(context=KUBE_CONTEXT)
     base = client.Configuration.get_default_copy()
     token = _get_sa_token(service_account)
@@ -60,6 +95,9 @@ def get_restricted_api_client(service_account: str = SERVICE_ACCOUNT) -> client.
 
 
 def _container_summary(cs) -> dict:
+    """Reduce a Kubernetes V1ContainerStatus object to the handful of fields
+    useful for triage (ready/restart count/current state+reason/image),
+    dropping the rest of the verbose API object."""
     state = "unknown"
     reason = None
     if cs.state.running:
@@ -81,6 +119,14 @@ def _container_summary(cs) -> dict:
 
 
 def list_pods(namespace: str = NAMESPACE, label_selector: str | None = None) -> dict:
+    """List pods in `namespace` (any namespace the caller/LLM asks about -
+    see the NAMESPACE vs. query-namespace note above _get_sa_token), with
+    phase, node, and a per-container status summary. Returns a dict with
+    `pods` capped to MAX_ITEMS entries and `truncated` set if more existed;
+    on a Kubernetes API error (e.g. namespace not found, RBAC denial)
+    returns an `error` key instead of raising, so the agent sees it as a
+    normal tool result.
+    """
     api_client = get_restricted_api_client()
     v1 = client.CoreV1Api(api_client)
     try:
@@ -101,6 +147,15 @@ def list_pods(namespace: str = NAMESPACE, label_selector: str | None = None) -> 
 
 
 def get_pod_logs(pod: str, namespace: str = NAMESPACE, container: str | None = None, tail_lines: int = MAX_LOG_LINES) -> dict:
+    """Fetch the tail of a single pod's logs.
+
+    tail_lines is clamped to MAX_LOG_LINES server-side (via the Kubernetes
+    API's own tailLines parameter) regardless of what the caller requests -
+    this bounds log volume at the source rather than fetching everything and
+    truncating client-side, which would waste bandwidth/memory on a noisy
+    pod. Returns an `error` key (not an exception) on API failure, e.g. pod
+    or container not found.
+    """
     api_client = get_restricted_api_client()
     v1 = client.CoreV1Api(api_client)
     tail_lines = min(tail_lines, MAX_LOG_LINES)
@@ -113,6 +168,13 @@ def get_pod_logs(pod: str, namespace: str = NAMESPACE, container: str | None = N
 
 
 def list_events(namespace: str = NAMESPACE, involved_object_name: str | None = None) -> dict:
+    """List recent Kubernetes Events in `namespace`, optionally filtered to
+    those involving a specific object (e.g. a pod name) via a field
+    selector. Events are sorted newest-first by last_timestamp (falling back
+    to event_time for events that only set the newer field) before capping,
+    so truncation drops the oldest/least relevant events rather than an
+    arbitrary API-ordered slice.
+    """
     api_client = get_restricted_api_client()
     v1 = client.CoreV1Api(api_client)
     field_selector = f"involvedObject.name={involved_object_name}" if involved_object_name else None
@@ -137,6 +199,10 @@ def list_events(namespace: str = NAMESPACE, involved_object_name: str | None = N
 
 
 def list_deployments(namespace: str = NAMESPACE) -> dict:
+    """List Deployments in `namespace` with replica counts and status
+    conditions, reduced from the full Deployment object to just the fields
+    relevant for triage (is it under-replicated, what condition explains
+    why)."""
     api_client = get_restricted_api_client()
     apps_v1 = client.AppsV1Api(api_client)
     try:
@@ -161,6 +227,10 @@ def list_deployments(namespace: str = NAMESPACE) -> dict:
 
 
 def build_server():
+    """Wire the four read-only functions above up as MCP tools. Each tool's
+    docstring here is what the LLM actually sees when deciding which tool to
+    call, so they're written to call out the read-only/ServiceAccount
+    guarantee explicitly."""
     from mcp.server.fastmcp import FastMCP
 
     mcp = FastMCP("kube_read")
@@ -192,4 +262,7 @@ def build_server():
 
 
 if __name__ == "__main__":
+    # Run as a standalone MCP server over stdio when launched directly (as
+    # the agent's MCP client config does), rather than being imported as a
+    # library - tests import the module's functions directly instead.
     build_server().run()

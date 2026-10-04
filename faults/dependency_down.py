@@ -23,6 +23,15 @@ CACHE_MANIFEST = "target-app/k8s/cache.yaml"
 
 
 def inject():
+    """Scale the cache (redis) Deployment to 0 replicas, after recording
+    ground truth.
+
+    This is the only fault that mutates a component other than the one the
+    alert fires on: cart's own pod spec is untouched, but once redis is
+    unreachable cart's /readyz probe starts failing, pulling it out of its
+    Service's endpoints and dropping its available replica count to 0 - so
+    DeploymentUnavailable fires on cart even though the root cause is cache.
+    """
     run_id, _ = lib.record_fault_start(
         SCENARIO, COMPONENT, ROOT_CAUSE_LABEL,
         {"affected_component": AFFECTED_COMPONENT, "expected_alerts": EXPECTED_ALERTS},
@@ -32,6 +41,12 @@ def inject():
 
 
 def reset():
+    """Re-apply the pristine cache manifest to restore its replica count,
+    wait for cache's rollout, then wait for cart's rollout too (since cart
+    never had its spec changed, "rollout" here just confirms its existing
+    pods recover readiness on their own once redis is reachable again -
+    nothing re-creates them), and mark ground truth resolved.
+    """
     lib.kubectl("-n", lib.NAMESPACE, "apply", "-f", str(lib.ROOT / CACHE_MANIFEST))
     lib.wait_rollout("cache")
     # cart self-heals once redis is reachable again; confirm it actually does.
@@ -41,6 +56,10 @@ def reset():
 
 
 def run() -> bool:
+    """Full fault cycle: inject, poll up to 5 min for DeploymentUnavailable
+    (on cart, the affected component) on the webhook receiver, reset
+    regardless of outcome, and report pass/fail.
+    """
     since = lib.now_iso()
     inject()
     print(f"[{SCENARIO}] waiting up to 5 min for {EXPECTED_ALERTS}...")

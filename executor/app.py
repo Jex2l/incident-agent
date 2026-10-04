@@ -16,16 +16,24 @@ app = FastAPI(title="incident-agent executor")
 
 @app.get("/healthz")
 def healthz():
+    """Liveness probe only - carries no information about proposal state."""
     return {"status": "ok"}
 
 
 @app.get("/proposals")
 def get_proposals():
+    """List all known proposals (pending, approved, or rejected).
+
+    list_proposals() first calls store.sync_from_incidents() to pick up any
+    newly-finished investigations, so this endpoint is also what makes a
+    fresh proposal show up for a human to act on in the first place.
+    """
     return {"proposals": list_proposals()}
 
 
 @app.get("/proposals/{proposal_id}")
 def get_one_proposal(proposal_id: str):
+    """Fetch a single proposal by id, 404 if it doesn't exist."""
     proposal = get_proposal(proposal_id)
     if proposal is None:
         raise HTTPException(status_code=404, detail="no such proposal")
@@ -34,6 +42,17 @@ def get_one_proposal(proposal_id: str):
 
 @app.post("/proposals/{proposal_id}/approve")
 def approve_proposal(proposal_id: str):
+    """The only endpoint in the whole system that can lead to a write
+    against the cluster, and even here it isn't automatic: a proposal must
+    already exist and be "pending" (never approved or rejected before - the
+    status check below prevents double-execution via a replayed or
+    concurrent request), and approving it only *attempts* execution.
+
+    The actual write happens inside execute_action(), which independently
+    re-validates the action/target/params against the allowlist regardless
+    of the fact that a human just approved this proposal - approval and
+    allowlist-validity are two separate gates, and both must pass.
+    """
     proposal = get_proposal(proposal_id)
     if proposal is None:
         raise HTTPException(status_code=404, detail="no such proposal")
@@ -71,6 +90,11 @@ def approve_proposal(proposal_id: str):
 
 @app.post("/proposals/{proposal_id}/reject")
 def reject_proposal(proposal_id: str):
+    """Mark a proposal rejected. This path never calls execute_action() or
+    touches allowlist.py at all - rejecting a proposal is purely a status
+    update plus an audit entry, so there is no way for a reject to have a
+    side effect on the cluster.
+    """
     proposal = get_proposal(proposal_id)
     if proposal is None:
         raise HTTPException(status_code=404, detail="no such proposal")
@@ -87,6 +111,11 @@ def reject_proposal(proposal_id: str):
 
 @app.get("/audit")
 def audit_log(limit: int = 50):
+    """Read-only view of the append-only audit log (executor/audit.jsonl).
+    Every proposal/approve/reject/execute event that has ever happened is in
+    there in order; this just tails the most recent `limit` entries, newest
+    first, for display. Nothing here can mutate the log.
+    """
     from executor.store import read_audit
     entries = read_audit()
     return {"entries": entries[-limit:][::-1]}

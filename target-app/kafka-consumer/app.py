@@ -26,6 +26,9 @@ LAG = Gauge("kafka_consumer_lag_messages", "Consumer group lag in messages", ["t
 
 
 def connect(retries: int = 30, delay_s: float = 2.0) -> KafkaConsumer:
+    """Retry connecting to the Kafka/Redpanda broker on startup, since the
+    broker container may still be coming up when this service starts.
+    """
     last_err = None
     for _ in range(retries):
         try:
@@ -46,9 +49,21 @@ def connect(retries: int = 30, delay_s: float = 2.0) -> KafkaConsumer:
 
 
 def report_lag(consumer: KafkaConsumer):
+    """Compute real consumer-group lag and publish it as a gauge.
+
+    Lag is derived the same way Kafka itself defines it: for each assigned
+    partition, the broker's end (high-water) offset minus this consumer's
+    current committed/fetch position. This is a genuine measurement against
+    the broker, not a simulated or hardcoded metric - it reflects actual
+    unconsumed messages, which is what makes the CONSUMER_DELAY_MS and
+    CONSUMER_STOPPED fault hooks below produce a believable, alertable
+    lag signal.
+    """
     try:
         partitions = consumer.assignment()
         if not partitions:
+            # No partitions assigned yet (or group rebalancing) - nothing to
+            # report this cycle rather than raising.
             return
         total_lag = 0
         end_offsets = consumer.end_offsets(list(partitions))
@@ -62,6 +77,11 @@ def report_lag(consumer: KafkaConsumer):
 
 
 def main():
+    """Connect, join the consumer group, then loop forever consuming
+    messages (or deliberately not, under CONSUMER_STOPPED) and periodically
+    reporting lag. Runs as a plain blocking loop rather than FastAPI, since
+    this service's only "API" is the Prometheus metrics endpoint.
+    """
     start_http_server(METRICS_PORT)
     consumer = connect()
     print(f"[kafka-consumer] consuming {KAFKA_BROKERS}/{KAFKA_TOPIC} group={GROUP_ID} "
@@ -93,6 +113,9 @@ def main():
             continue
 
         for message in consumer:
+            # Fault hook: pretend each message takes longer to process than
+            # it really does, so the consumer falls behind the producer and
+            # real lag accumulates (slow-consumer fault).
             if CONSUMER_DELAY_MS:
                 time.sleep(CONSUMER_DELAY_MS / 1000.0)
             PROCESSED.labels(KAFKA_TOPIC, GROUP_ID).inc()

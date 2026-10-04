@@ -40,6 +40,13 @@ def _start_loki_port_forward() -> subprocess.Popen:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """FastAPI startup/shutdown hook: starts the Loki port-forward and spins
+    up the single shared ToolSet (4 MCP tool subprocesses) once, for the
+    lifetime of the whole webhook process, rather than per-request - the
+    subprocess spawn cost would otherwise be paid on every single alert.
+    Both are torn down cleanly on shutdown (ToolSet via its own __aexit__,
+    the port-forward via an explicit terminate()).
+    """
     _state["loki_pf"] = _start_loki_port_forward()
     async with ToolSet() as toolset:
         _state["toolset"] = toolset
@@ -51,6 +58,13 @@ app = FastAPI(title="incident-agent webhook", lifespan=lifespan)
 
 
 def _alert_summary(alert: dict) -> dict:
+    """Extract just the fields the orchestrator/prompt actually need from
+    one Alertmanager alert object, discarding the rest of Alertmanager's
+    payload shape. `root_cause_hint` is this project's own annotation
+    convention (set on every incident-agent.* PrometheusRule) used purely as
+    a filter - see receive_alert() below - not required by the agent logic
+    itself.
+    """
     labels = alert.get("labels", {})
     annotations = alert.get("annotations", {})
     return {
@@ -66,6 +80,12 @@ def _alert_summary(alert: dict) -> dict:
 
 
 async def _run_investigation(alert_summary: dict):
+    """Background task (fired via asyncio.create_task, not awaited by the
+    webhook handler) that actually runs the investigation and writes its
+    result to evals/runs/ - this is the file executor/store.py's
+    sync_from_incidents() later scans to find investigations with a non-null
+    proposed_action and turn them into approval proposals.
+    """
     incident_id = f"incident-{alert_summary.get('alertname', 'unknown')}-{int(time.time())}"
     try:
         result = await investigate(

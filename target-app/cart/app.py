@@ -19,13 +19,21 @@ from fastapi import FastAPI, HTTPException, Response
 import redis
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 
+# Fault hook: fail before the app ever starts serving, so Kubernetes sees a
+# container that exits immediately and puts the pod into CrashLoopBackOff -
+# this simulates a bad deploy/config rather than a runtime failure.
 if os.environ.get("FORCE_CRASH_ON_BOOT", "").lower() == "true":
     print("[cart] FORCE_CRASH_ON_BOOT set, exiting to simulate a crash loop", file=sys.stderr)
     sys.exit(1)
 
+# Fault hook: allocate and hold a block of memory at import time. Combined
+# with a low memory limit set by the OOM fault script, this pushes the pod
+# over its limit so the kubelet OOMKills it - a controlled way to reproduce
+# "service keeps getting OOMKilled" without a real memory leak.
 _BALLAST_MB = int(os.environ.get("MEMORY_BALLAST_MB", "0") or "0")
 _ballast = bytearray(_BALLAST_MB * 1024 * 1024) if _BALLAST_MB > 0 else None
 
+# Fault hook: artificial per-request delay, applied in the middleware below.
 LATENCY_MS = int(os.environ.get("LATENCY_MS", "0") or "0")
 REDIS_HOST = os.environ.get("REDIS_HOST", "cache")
 REDIS_PORT = int(os.environ.get("REDIS_PORT", "6379"))
@@ -40,6 +48,9 @@ SERVICE = "cart"
 
 @app.middleware("http")
 async def metrics_middleware(request, call_next):
+    """Apply the LATENCY_MS fault hook (if set) and record every request into
+    the Prometheus counters/histogram below.
+    """
     start = time.time()
     # Health/readiness probes must stay fast regardless of injected latency -
     # otherwise the readiness probe itself times out, the pod never goes
@@ -60,11 +71,19 @@ async def metrics_middleware(request, call_next):
 
 @app.get("/healthz")
 def healthz():
+    """Liveness probe target - deliberately does not check Redis, so a cache
+    outage doesn't also kill otherwise-healthy cart pods. Exposes the
+    current ballast size so it's visible that an OOM fault is active.
+    """
     return {"status": "ok", "ballast_mb": _BALLAST_MB}
 
 
 @app.get("/readyz")
 def readyz():
+    """Readiness probe target - does check Redis, since the cart can't serve
+    real traffic without it, so a cache outage should pull the pod out of
+    the Service's endpoints.
+    """
     try:
         redis_client.ping()
     except redis.RedisError as e:
@@ -74,11 +93,13 @@ def readyz():
 
 @app.get("/metrics")
 def metrics():
+    """Prometheus scrape endpoint."""
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
 @app.get("/cart/{session}")
 def get_cart(session: str):
+    """Return the current contents of one session's cart from Redis."""
     try:
         items = redis_client.hgetall(f"cart:{session}")
     except redis.RedisError as e:
@@ -88,6 +109,7 @@ def get_cart(session: str):
 
 @app.post("/cart/{session}/add")
 def add_to_cart(session: str, item: str, qty: int = 1):
+    """Increment an item's quantity in the session's cart hash."""
     try:
         redis_client.hincrby(f"cart:{session}", item, qty)
     except redis.RedisError as e:
@@ -97,6 +119,7 @@ def add_to_cart(session: str, item: str, qty: int = 1):
 
 @app.post("/cart/{session}/checkout")
 def checkout(session: str):
+    """Read back the cart as a receipt and clear it from Redis."""
     try:
         items = redis_client.hgetall(f"cart:{session}")
         redis_client.delete(f"cart:{session}")

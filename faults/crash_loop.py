@@ -34,6 +34,13 @@ RESET_PATCH = {
 
 
 def inject():
+    """Patch cart's Deployment to set FORCE_CRASH_ON_BOOT=true, after
+    recording ground truth.
+
+    Every new pod exits immediately on boot (before it can ever pass its
+    readiness probe), so kubelet's restart backoff escalates and the
+    container ends up in CrashLoopBackOff, which should fire that alert.
+    """
     run_id, _ = lib.record_fault_start(
         SCENARIO, COMPONENT, ROOT_CAUSE_LABEL,
         {"force_crash_on_boot": True, "expected_alerts": EXPECTED_ALERTS},
@@ -43,6 +50,9 @@ def inject():
 
 
 def reset():
+    """Remove FORCE_CRASH_ON_BOOT (via $patch: delete), wait for the rollout,
+    and mark the ground-truth record resolved.
+    """
     lib.patch_deployment(COMPONENT, RESET_PATCH)
     lib.wait_rollout(COMPONENT)
     lib.record_fault_end(SCENARIO)
@@ -50,6 +60,9 @@ def reset():
 
 
 def run() -> bool:
+    """Full fault cycle: inject, poll up to 5 min for CrashLoopBackOff on the
+    webhook receiver, reset regardless of outcome, and report pass/fail.
+    """
     since = lib.now_iso()
     inject()
     print(f"[{SCENARIO}] waiting up to 5 min for {EXPECTED_ALERTS}...")

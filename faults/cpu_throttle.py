@@ -26,6 +26,14 @@ EXPECTED_ALERTS = ["HighLatency"]
 ORIGINAL_CPU_LIMIT = "250m"
 ORIGINAL_CPU_REQUEST = "25m"
 
+# LATENCY_MS=1200 is added to every cart request EXCEPT /healthz and /readyz
+# (see target-app/cart/app.py's middleware, which special-cases those two
+# paths). That exclusion matters: if the injected sleep applied to /readyz
+# too, the kubelet's own readiness probe would start timing out and cart
+# would be marked NotReady / pulled out of Service endpoints - which would
+# manifest as an availability fault, not the latency fault this scenario is
+# meant to simulate. An earlier version of this fault didn't exclude those
+# paths and took down the probe along with real traffic.
 INJECT_PATCH = {
     "spec": {"template": {"spec": {"containers": [{
         "name": "cart",
@@ -50,6 +58,14 @@ RESET_PATCH = {
 
 
 def inject():
+    """Patch cart's Deployment: drop CPU limit/request to 80m and set
+    LATENCY_MS=1200, after recording ground truth.
+
+    The low CPU allotment makes the CFS quota genuinely throttle cart under
+    the frontend's background load, while LATENCY_MS is a deterministic
+    backstop that guarantees the HighLatency p95 threshold is crossed even if
+    kind's synthetic traffic isn't heavy enough to cause real throttling.
+    """
     run_id, _ = lib.record_fault_start(
         SCENARIO, COMPONENT, ROOT_CAUSE_LABEL,
         {"cpu_limit": "80m", "latency_ms": 1200, "expected_alerts": EXPECTED_ALERTS},
@@ -59,6 +75,9 @@ def inject():
 
 
 def reset():
+    """Remove LATENCY_MS (via $patch: delete) and restore cart's original CPU
+    limit/request, then wait for the rollout and mark ground truth resolved.
+    """
     lib.patch_deployment(COMPONENT, RESET_PATCH)
     lib.wait_rollout(COMPONENT)
     lib.record_fault_end(SCENARIO)
@@ -66,6 +85,9 @@ def reset():
 
 
 def run() -> bool:
+    """Full fault cycle: inject, poll up to 5 min for HighLatency on the
+    webhook receiver, reset regardless of outcome, and report pass/fail.
+    """
     since = lib.now_iso()
     inject()
     print(f"[{SCENARIO}] waiting up to 5 min for {EXPECTED_ALERTS}...")
