@@ -1,0 +1,24 @@
+{
+  "465327e8-999a-44a2-ae06-26e790847511": {
+    "id": "465327e8-999a-44a2-ae06-26e790847511",
+    "incident_id": "incident-REPLAY-DEMO",
+    "alert": {
+      "alertname": "HighErrorRate",
+      "namespace": "incident-agent"
+    },
+    "hypothesis": "ILLUSTRATIVE: demonstrates the approval mechanism for the replay site. The real oom_kill investigation bundled alongside this did not propose an action (the model stayed conservative); this proposal was created manually to show how an approval decision actually executes.",
+    "root_cause_label": "bad_deploy",
+    "confidence": 0.85,
+    "action": "scale",
+    "target": "cart",
+    "params": {
+      "replicas": 2
+    },
+    "status": "approved",
+    "created_at": 0,
+    "decided_at": 1791138368.6377852,
+    "executed": true,
+    "execution_result": "deployment.apps/cart scaled",
+    "execution_error": null
+  }
+}

@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>incident-agent — recorded incident replay</title>
+<style>
+  :root {
+    --bg: #fafafa; --panel: #ffffff; --border: #e2e2e2; --text: #1c1c1c; --muted: #6b6b6b;
+    --accent: #2563eb; --good: #2aa198; --bad: #dc322f; --warn: #b58900;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--text); margin: 0; padding: 0;
+  }
+  header { padding: 28px 32px 16px; max-width: 980px; margin: 0 auto; }
+  header h1 { font-size: 22px; margin: 0 0 4px; }
+  header p { color: var(--muted); margin: 0; font-size: 14px; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 32px 60px; display: grid; grid-template-columns: 220px 1fr; gap: 28px; }
+  @media (max-width: 760px) { .wrap { grid-template-columns: 1fr; } }
+
+  .stepper { position: sticky; top: 20px; align-self: start; }
+  .step {
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 6px;
+    cursor: pointer; font-size: 13px; color: var(--muted); border-left: 3px solid transparent;
+  }
+  .step.active { background: #eef2ff; color: var(--text); border-left-color: var(--accent); font-weight: 600; }
+  .step .dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; flex-shrink: 0; }
+  .step.active .dot { background: var(--accent); }
+  .controls { margin-top: 16px; display: flex; gap: 8px; }
+  button.nav {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px;
+    cursor: pointer; font-size: 13px;
+  }
+  button.nav:hover { background: #f0f0f0; }
+  button.nav:disabled { opacity: 0.4; cursor: default; }
+
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 24px; min-height: 420px; }
+  .panel h2 { margin-top: 0; font-size: 18px; }
+  .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .badge.critical { background: #fde2e2; color: var(--bad); }
+  .badge.warning { background: #fff3cd; color: var(--warn); }
+  .badge.diagnosed { background: #d9f7f5; color: var(--good); }
+  .badge.inconclusive { background: #eee; color: var(--muted); }
+
+  .kv { display: grid; grid-template-columns: 140px 1fr; gap: 6px 12px; font-size: 13px; margin: 14px 0; }
+  .kv dt { color: var(--muted); }
+  .kv dd { margin: 0; font-family: ui-monospace, monospace; }
+
+  .evidence-item {
+    border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 10px;
+    opacity: 0; transform: translateY(6px); animation: fadeIn 0.4s ease forwards;
+  }
+  .evidence-item .tool-name { font-family: ui-monospace, monospace; font-size: 13px; color: var(--accent); font-weight: 600; }
+  .evidence-item .query { font-family: ui-monospace, monospace; font-size: 12px; color: var(--muted); margin: 6px 0; word-break: break-all; }
+  .evidence-item .summary { font-size: 13px; margin-top: 6px; }
+  @keyframes fadeIn { to { opacity: 1; transform: translateY(0); } }
+
+  .hypothesis-card { border: 1px solid var(--border); border-radius: 8px; padding: 20px; background: #fbfbfd; }
+  .hypothesis-text { font-size: 15px; line-height: 1.5; margin: 10px 0 16px; }
+  .confidence-bar { height: 8px; background: #eee; border-radius: 4px; overflow: hidden; margin-top: 4px; }
+  .confidence-fill { height: 100%; background: var(--accent); }
+
+  .approval-card { border: 1px solid var(--border); border-radius: 8px; padding: 20px; }
+  .approval-actions { margin-top: 16px; display: flex; gap: 10px; }
+  .btn { border: none; border-radius: 6px; padding: 9px 18px; font-size: 14px; cursor: pointer; font-weight: 600; }
+  .btn.approve { background: var(--good); color: white; }
+  .btn.reject { background: var(--bad); color: white; }
+  .btn:disabled { opacity: 0.5; cursor: default; }
+  .decision-result { margin-top: 16px; padding: 14px; border-radius: 6px; background: #d9f7f5; color: #0b5e59; font-size: 13px; }
+  .note { font-size: 12px; color: var(--muted); background: #fffbea; border: 1px solid #f0e3a0; border-radius: 6px; padding: 10px 12px; margin-top: 16px; }
+
+  footer { max-width: 980px; margin: 0 auto; padding: 0 32px 40px; color: var(--muted); font-size: 12px; }
+  footer a { color: var(--accent); }
+  code { background: #f0f0f0; padding: 1px 5px; border-radius: 3px; font-size: 0.9em; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>incident-agent — recorded incident replay</h1>
+  <p>A real, saved investigation from this project's eval harness, played back step by step. No live cluster, no live LLM - this is historical data from <code>evals/report.md</code>.</p>
+</header>
+
+<div class="wrap">
+  <div class="stepper" id="stepper"></div>
+  <div class="panel" id="panel"></div>
+</div>
+
+<footer>
+  Source data: <code>replay/data/investigation.json</code> (real agent output) and
+  <code>replay/data/approval-demo-*.json</code> (the approval mechanism, demonstrated live against the
+  real executor since this particular investigation didn't propose an action - see the note on that step).
+  Full project: see the repository README.
+</footer>
+
+<script>
+const STEPS = [
+  { id: 'alert', label: '1. Alert received' },
+  { id: 'scope', label: '2. Scope & evidence' },
+  { id: 'hypothesis', label: '3. Hypothesis' },
+  { id: 'approval', label: '4. Approval gate' },
+];
+
+let current = 0;
+let investigation = null;
+let approvalProposal = null;
+let approvalAudit = [];
+let decided = false;
+
+async function loadData() {
+  const [inv, prop, audit] = await Promise.all([
+    fetch('data/investigation.json').then(r => r.json()),
+    fetch('data/approval-demo-proposal.json').then(r => r.json()),
+    fetch('data/approval-demo-audit.jsonl').then(r => r.text()),
+  ]);
+  investigation = inv;
+  approvalProposal = Object.values(prop)[0];
+  approvalAudit = audit.trim().split('\n').map(l => JSON.parse(l));
+}
+
+function renderStepper() {
+  const el = document.getElementById('stepper');
+  el.innerHTML = STEPS.map((s, i) => `
+    <div class="step ${i === current ? 'active' : ''}" data-i="${i}">
+      <span class="dot"></span>${s.label}
+    </div>
+  `).join('') + `
+    <div class="controls">
+      <button class="nav" id="prevBtn" ${current === 0 ? 'disabled' : ''}>&larr; Back</button>
+      <button class="nav" id="nextBtn" ${current === STEPS.length - 1 ? 'disabled' : ''}>Next &rarr;</button>
+    </div>
+  `;
+  el.querySelectorAll('.step').forEach(stepEl => {
+    stepEl.onclick = () => { current = parseInt(stepEl.dataset.i); render(); };
+  });
+  document.getElementById('prevBtn').onclick = () => { if (current > 0) { current--; render(); } };
+  document.getElementById('nextBtn').onclick = () => { if (current < STEPS.length - 1) { current++; render(); } };
+}
+
+function renderAlert() {
+  const alert = investigation.alert;
+  return `
+    <h2>Alert received</h2>
+    <span class="badge ${alert.severity || 'warning'}">${alert.severity || 'unknown'}</span>
+    <div class="kv">
+      <dt>Alert name</dt><dd>${alert.alertname}</dd>
+      <dt>Namespace</dt><dd>${alert.namespace}</dd>
+      ${alert.root_cause_hint ? `<dt>root_cause_hint</dt><dd>${alert.root_cause_hint}</dd>` : ''}
+    </div>
+    <p style="font-size:13px;color:var(--muted)">This is the structured alert summary the agent's webhook intake builds
+    from Alertmanager's webhook payload (<code>agent/webhook.py:_alert_summary</code>) before handing it to the
+    investigation loop.</p>
+  `;
+}
+
+function renderScope() {
+  const toolCalls = investigation.tool_calls || [];
+  const items = toolCalls.map((tc, i) => `
+    <div class="evidence-item" style="animation-delay:${i * 0.08}s">
+      <div class="tool-name">${tc.name}</div>
+      <div class="query">${JSON.stringify(tc.arguments)}</div>
+      <div class="summary">${(tc.result_preview || '').slice(0, 220)}${(tc.result_preview || '').length > 220 ? '…' : ''}</div>
+    </div>
+  `).join('');
+  return `
+    <h2>Scope & evidence</h2>
+    <p style="font-size:13px;color:var(--muted)">${toolCalls.length} real tool calls, made over ${investigation.turns?.length || '?'}
+    LLM turns, via the actual MCP protocol path (not a mock) - prometheus_query, log_search, kube_read,
+    runbook_search, each going through its own subprocess.</p>
+    ${items}
+  `;
+}
+
+function renderHypothesis() {
+  const r = investigation.result;
+  const pct = Math.round((r.confidence || 0) * 100);
+  return `
+    <h2>Hypothesis</h2>
+    <div class="hypothesis-card">
+      <span class="badge ${r.status}">${r.status}</span>
+      <p class="hypothesis-text">${r.hypothesis}</p>
+      <div class="kv">
+        <dt>root_cause_label</dt><dd>${r.root_cause_label ?? 'null'}</dd>
+        <dt>component</dt><dd>${r.component ?? 'null'}</dd>
+        <dt>confidence</dt><dd>${r.confidence}</dd>
+      </div>
+      <div style="font-size:12px;color:var(--muted);margin-top:10px">confidence</div>
+      <div class="confidence-bar"><div class="confidence-fill" style="width:${pct}%"></div></div>
+    </div>
+  `;
+}
+
+function renderApproval() {
+  const hasAction = investigation.result.proposed_action;
+  const p = approvalProposal;
+  const executedEntry = approvalAudit.find(e => e.event === 'approved_and_executed');
+
+  let noteHtml = '';
+  if (!hasAction) {
+    noteHtml = `<div class="note">This particular investigation's <code>proposed_action</code> was <code>null</code>
+    - the model stayed conservative rather than proposing an unconfirmed action. The approval flow below uses a
+    separate, clearly-labeled proposal (<code>${p.incident_id}</code>) run live against the real executor service
+    specifically to demonstrate this mechanism - not fabricated, just not from this specific incident. See
+    <code>docs/DECISIONS.md</code> (Phase 9) for why.</div>`;
+  }
+
+  let decisionHtml = '';
+  if (decided === 'approved') {
+    decisionHtml = `
+      <div class="decision-result">
+        <b>This is a replay of a real decision</b> - this exact proposal was approved for real during
+        development: the executor validated it against the allowlist (<code>executor/allowlist.py</code>:
+        action <code>scale</code>, target <code>cart</code>, replicas within bounds) and ran
+        <code>kubectl -n incident-agent scale deployment/cart --replicas=2</code>.<br><br>
+        Real result: <code>${executedEntry ? executedEntry.result : 'n/a'}</code>
+      </div>`;
+  } else if (decided === 'rejected') {
+    decisionHtml = `
+      <div class="decision-result" style="background:#fde2e2;color:#8a1f1f">
+        Rejected (replay). In the real executor, a rejected proposal is recorded in the audit log and the
+        action never reaches <code>kubectl</code> - verified directly in <code>tests/test_executor.py</code>
+        and live in <code>docs/DECISIONS.md</code> (Phase 5).
+      </div>`;
+  }
+
+  return `
+    <h2>Approval gate</h2>
+    ${noteHtml}
+    <div class="approval-card" style="margin-top:14px">
+      <div class="kv">
+        <dt>Proposed action</dt><dd>${p.action}</dd>
+        <dt>Target</dt><dd>${p.target}</dd>
+        <dt>Params</dt><dd>${JSON.stringify(p.params)}</dd>
+        <dt>Hypothesis</dt><dd style="font-family:inherit">${p.hypothesis}</dd>
+      </div>
+      <div class="approval-actions">
+        <button class="btn approve" id="approveBtn" ${decided ? 'disabled' : ''}>Approve</button>
+        <button class="btn reject" id="rejectBtn" ${decided ? 'disabled' : ''}>Reject</button>
+      </div>
+      <div id="decisionResult">${decisionHtml}</div>
+    </div>
+  `;
+}
+
+function wireApprovalButtons() {
+  const approveBtn = document.getElementById('approveBtn');
+  const rejectBtn = document.getElementById('rejectBtn');
+  if (!approveBtn) return;
+  approveBtn.onclick = () => { decided = 'approved'; render(true); };
+  rejectBtn.onclick = () => { decided = 'rejected'; render(true); };
+}
+
+function render(skipStepper) {
+  if (!skipStepper) renderStepper();
+  const panel = document.getElementById('panel');
+  const renderers = [renderAlert, renderScope, renderHypothesis, renderApproval];
+  panel.innerHTML = renderers[current]();
+  if (current === 3) wireApprovalButtons();
+}
+
+loadData().then(() => render()).catch(e => {
+  document.getElementById('panel').innerHTML =
+    `<p>Could not load replay data: ${e}<br>Serve this directory over HTTP (e.g. <code>make replay</code>), don't open index.html as a file:// URL.</p>`;
+});
+</script>
+</body>
+</html>

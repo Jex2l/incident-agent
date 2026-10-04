@@ -1,0 +1,2 @@
+{"timestamp": 1791138364.1436312, "proposal_id": "465327e8-999a-44a2-ae06-26e790847511", "incident_id": "incident-REPLAY-DEMO", "event": "proposed", "action": "scale", "target": "cart"}
+{"timestamp": 1791138368.638176, "proposal_id": "465327e8-999a-44a2-ae06-26e790847511", "incident_id": "incident-REPLAY-DEMO", "event": "approved_and_executed", "action": "scale", "target": "cart", "params": {"replicas": 2}, "result": "deployment.apps/cart scaled"}
