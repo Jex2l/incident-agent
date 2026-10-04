@@ -87,6 +87,25 @@ async def _run_investigation(alert_summary: dict):
     proposed_action and turn them into approval proposals.
     """
     incident_id = f"incident-{alert_summary.get('alertname', 'unknown')}-{int(time.time())}"
+    # Write a placeholder record immediately, before the (possibly
+    # multi-minute) investigation even starts, so a dashboard polling
+    # evals/runs/ can show "investigating" in real time rather than nothing
+    # at all until the final result lands. Harmless to downstream consumers:
+    # executor/store.py's sync_from_incidents() only acts on a record once
+    # its proposed_action is non-null, which this placeholder never has, so
+    # it's silently skipped until this file is overwritten below with the
+    # real result.
+    placeholder = {
+        "incident_id": incident_id,
+        "alert": alert_summary,
+        "result": {
+            "hypothesis": None, "root_cause_label": None, "component": None,
+            "confidence": None, "evidence": [], "proposed_action": None,
+            "status": "investigating",
+        },
+        "completed_at": None,
+    }
+    (INCIDENTS_DIR / f"{incident_id}.json").write_text(json.dumps(placeholder, indent=2, default=str))
     try:
         result = await investigate(
             alert_summary,
