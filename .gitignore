@@ -34,6 +34,10 @@ evals/report.md
 traces/*.json
 !traces/.gitkeep
 
+# Executor state (generated, not committed in bulk)
+executor/proposals.json
+executor/audit.jsonl
+
 # Helm
 infra/helm-values/*.local.yaml
 

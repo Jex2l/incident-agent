@@ -20,6 +20,7 @@ help:
 	@echo "  make down       - tear down the kind cluster"
 	@echo "  make faults     - run fault injection scenarios (requires 'make up')"
 	@echo "  make agent      - start the agent's webhook intake server (requires 'make up')"
+	@echo "  make executor   - start the approval-gated executor service (requires 'make up')"
 	@echo "  make eval       - run the eval harness end to end, writes evals/report.md"
 	@echo "  make ui         - start the approval UI/API locally"
 	@echo "  make replay     - serve the static replay site locally"
@@ -67,6 +68,9 @@ ui: venv
 
 agent: venv
 	@$(PY) -m uvicorn agent.webhook:app --port 8010
+
+executor: venv
+	@$(PY) -m uvicorn executor.app:app --port 8020
 
 replay:
 	@echo "Serving replay/ at http://localhost:4000"
