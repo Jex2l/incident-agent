@@ -1,0 +1,46 @@
+{
+  "incident_id": "incident-DeploymentUnavailable-1791086303",
+  "alert": {
+    "alertname": "DeploymentUnavailable",
+    "namespace": "incident-agent",
+    "severity": "critical",
+    "labels": {
+      "alertname": "DeploymentUnavailable",
+      "container": "kube-state-metrics",
+      "deployment": "cart",
+      "endpoint": "http",
+      "instance": "10.244.1.5:8080",
+      "job": "kube-state-metrics",
+      "namespace": "incident-agent",
+      "pod": "kube-prometheus-stack-kube-state-metrics-78dc75b868-qzllc",
+      "prometheus": "monitoring/kube-prometheus-stack-prometheus",
+      "service": "kube-prometheus-stack-kube-state-metrics",
+      "severity": "critical"
+    },
+    "summary": "Deployment cart has unavailable replicas",
+    "description": "cart has fewer available replicas than desired for 2m.",
+    "root_cause_hint": "bad_deploy_or_dependency_down",
+    "starts_at": "2026-10-04T03:56:11.698Z"
+  },
+  "result": {
+    "hypothesis": "The issue might be related to the deployment 'cart' not having enough available replicas, possibly due to a bad deployment or a dependency being down.",
+    "root_cause_label": "bad_deploy_or_dependency_down",
+    "component": "cart",
+    "confidence": 0.8,
+    "evidence": [
+      {
+        "tool": "prometheus_query_instant",
+        "query": "sum(rate(deployment_available_replicas_total{job=\"kube-state-metrics\", namespace=~\"^incident-agent$\"}[1m])) by (deployment) > 0",
+        "summary": "Failed to fetch metrics due to token minting issues"
+      },
+      {
+        "tool": "kube_list_pods",
+        "query": "{\"namespace\":\"incident-agent\"}",
+        "summary": "Pod list retrieval failed with TLS handshake timeout"
+      }
+    ],
+    "proposed_action": null,
+    "status": "inconclusive"
+  },
+  "completed_at": 1791086689.49054
+}

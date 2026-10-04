@@ -10,7 +10,7 @@ KUBE_CONTEXT := kind-$(CLUSTER_NAME)
 VENV := $(PROJECT_ROOT)/.venv
 PY := $(VENV)/bin/python
 
-.PHONY: help preflight venv up down faults eval ui replay test clean
+.PHONY: help preflight venv up down faults eval ui agent replay test clean
 
 help:
 	@echo "incident-agent targets:"
@@ -19,6 +19,7 @@ help:
 	@echo "  make up         - preflight, create kind cluster, install observability, deploy target app"
 	@echo "  make down       - tear down the kind cluster"
 	@echo "  make faults     - run fault injection scenarios (requires 'make up')"
+	@echo "  make agent      - start the agent's webhook intake server (requires 'make up')"
 	@echo "  make eval       - run the eval harness end to end, writes evals/report.md"
 	@echo "  make ui         - start the approval UI/API locally"
 	@echo "  make replay     - serve the static replay site locally"
@@ -63,6 +64,9 @@ eval: venv
 
 ui: venv
 	@$(PY) -m uvicorn ui.app:app --reload --port 8080
+
+agent: venv
+	@$(PY) -m uvicorn agent.webhook:app --port 8010
 
 replay:
 	@echo "Serving replay/ at http://localhost:4000"

@@ -30,9 +30,13 @@ MAX_ITEMS = int(os.environ.get("KUBE_READ_MAX_ITEMS", "20"))
 MAX_LOG_LINES = int(os.environ.get("KUBE_READ_MAX_LOG_LINES", "100"))
 
 
-def _get_sa_token(namespace: str = NAMESPACE, service_account: str = SERVICE_ACCOUNT, duration: str = "1h") -> str:
+def _get_sa_token(service_account: str = SERVICE_ACCOUNT, duration: str = "1h") -> str:
+    # The ServiceAccount always lives in NAMESPACE (where infra/rbac/ created
+    # it) - this is NOT the namespace a tool call queries. A pod/log/event
+    # listing can target any namespace the model asks for (list_pods(namespace=...)
+    # etc.), but the token must always be minted from where the SA actually is.
     result = subprocess.run(
-        ["kubectl", "--context", KUBE_CONTEXT, "-n", namespace, "create", "token", service_account, f"--duration={duration}"],
+        ["kubectl", "--context", KUBE_CONTEXT, "-n", NAMESPACE, "create", "token", service_account, f"--duration={duration}"],
         capture_output=True, text=True,
     )
     if result.returncode != 0:
@@ -40,12 +44,12 @@ def _get_sa_token(namespace: str = NAMESPACE, service_account: str = SERVICE_ACC
     return result.stdout.strip()
 
 
-def get_restricted_api_client(namespace: str = NAMESPACE, service_account: str = SERVICE_ACCOUNT) -> client.ApiClient:
+def get_restricted_api_client(service_account: str = SERVICE_ACCOUNT) -> client.ApiClient:
     """Build an ApiClient authenticated as the read-only ServiceAccount's
     own token - NOT the admin kubeconfig identity used to mint it."""
     config.load_kube_config(context=KUBE_CONTEXT)
     base = client.Configuration.get_default_copy()
-    token = _get_sa_token(namespace, service_account)
+    token = _get_sa_token(service_account)
     restricted = client.Configuration()
     restricted.host = base.host
     restricted.ssl_ca_cert = base.ssl_ca_cert
@@ -77,9 +81,12 @@ def _container_summary(cs) -> dict:
 
 
 def list_pods(namespace: str = NAMESPACE, label_selector: str | None = None) -> dict:
-    api_client = get_restricted_api_client(namespace)
+    api_client = get_restricted_api_client()
     v1 = client.CoreV1Api(api_client)
-    pods = v1.list_namespaced_pod(namespace, label_selector=label_selector or "").items
+    try:
+        pods = v1.list_namespaced_pod(namespace, label_selector=label_selector or "").items
+    except client.exceptions.ApiException as e:
+        return {"namespace": namespace, "error": f"{e.status} {e.reason}"}
     items = [
         {
             "name": p.metadata.name,
@@ -94,7 +101,7 @@ def list_pods(namespace: str = NAMESPACE, label_selector: str | None = None) -> 
 
 
 def get_pod_logs(pod: str, namespace: str = NAMESPACE, container: str | None = None, tail_lines: int = MAX_LOG_LINES) -> dict:
-    api_client = get_restricted_api_client(namespace)
+    api_client = get_restricted_api_client()
     v1 = client.CoreV1Api(api_client)
     tail_lines = min(tail_lines, MAX_LOG_LINES)
     try:
@@ -106,10 +113,13 @@ def get_pod_logs(pod: str, namespace: str = NAMESPACE, container: str | None = N
 
 
 def list_events(namespace: str = NAMESPACE, involved_object_name: str | None = None) -> dict:
-    api_client = get_restricted_api_client(namespace)
+    api_client = get_restricted_api_client()
     v1 = client.CoreV1Api(api_client)
     field_selector = f"involvedObject.name={involved_object_name}" if involved_object_name else None
-    events = v1.list_namespaced_event(namespace, field_selector=field_selector).items
+    try:
+        events = v1.list_namespaced_event(namespace, field_selector=field_selector).items
+    except client.exceptions.ApiException as e:
+        return {"namespace": namespace, "error": f"{e.status} {e.reason}"}
     events = sorted(events, key=lambda e: e.last_timestamp or e.event_time or "", reverse=True)
     items = [
         {
@@ -127,9 +137,12 @@ def list_events(namespace: str = NAMESPACE, involved_object_name: str | None = N
 
 
 def list_deployments(namespace: str = NAMESPACE) -> dict:
-    api_client = get_restricted_api_client(namespace)
+    api_client = get_restricted_api_client()
     apps_v1 = client.AppsV1Api(api_client)
-    deployments = apps_v1.list_namespaced_deployment(namespace).items
+    try:
+        deployments = apps_v1.list_namespaced_deployment(namespace).items
+    except client.exceptions.ApiException as e:
+        return {"namespace": namespace, "error": f"{e.status} {e.reason}"}
     items = [
         {
             "name": d.metadata.name,

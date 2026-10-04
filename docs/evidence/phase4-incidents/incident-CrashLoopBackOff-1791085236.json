@@ -1,0 +1,76 @@
+{
+  "incident_id": "incident-CrashLoopBackOff-1791085236",
+  "alert": {
+    "alertname": "CrashLoopBackOff",
+    "namespace": "incident-agent",
+    "severity": "critical",
+    "labels": {
+      "alertname": "CrashLoopBackOff",
+      "container": "cart",
+      "endpoint": "http",
+      "instance": "10.244.1.5:8080",
+      "job": "kube-state-metrics",
+      "namespace": "incident-agent",
+      "pod": "cart-7cbbf6bf86-w2ml9",
+      "prometheus": "monitoring/kube-prometheus-stack-prometheus",
+      "reason": "CrashLoopBackOff",
+      "service": "kube-prometheus-stack-kube-state-metrics",
+      "severity": "critical",
+      "uid": "de9a43ed-bf15-42e3-9a4e-f359bfe1b5ad"
+    },
+    "summary": "Pod cart-7cbbf6bf86-w2ml9 is in CrashLoopBackOff",
+    "description": "Container cart in pod cart-7cbbf6bf86-w2ml9 is crash-looping.",
+    "root_cause_hint": "crash_loop_bad_config",
+    "starts_at": "2026-10-04T03:40:26.698Z"
+  },
+  "result": {
+    "hypothesis": "Investigation inconclusive: wallclock_timeout_s (480.0) reached",
+    "root_cause_label": null,
+    "component": null,
+    "confidence": 0.0,
+    "evidence": [
+      {
+        "tool": "kube_list_pods",
+        "query": {
+          "namespace": "incident-agent"
+        },
+        "summary": "returned 8 pods"
+      },
+      {
+        "tool": "prometheus_query_instant",
+        "query": {
+          "promql": "crash_loop_back_off{pod=\"cart-7cbbf6bf86-w2ml9\"}"
+        },
+        "summary": "returned 0 series"
+      },
+      {
+        "tool": "search_pod_logs",
+        "query": {
+          "namespace": "incident-agent",
+          "pod": "cart-7cbbf6bf86-w2ml9",
+          "since_minutes": 30,
+          "limit": 5
+        },
+        "summary": "returned 1 patterns"
+      },
+      {
+        "tool": "kube_list_events",
+        "query": {
+          "namespace": "incident-agent",
+          "involved_object_name": "cart-7cbbf6bf86-w2ml9"
+        },
+        "summary": "returned 6 events"
+      },
+      {
+        "tool": "search_runbooks_tool",
+        "query": {
+          "query": "CrashLoopBackOff and FORCE_CRASH_ON_BOOT set, exiting to simulate a crash loop"
+        },
+        "summary": "returned 3 results"
+      }
+    ],
+    "proposed_action": null,
+    "status": "inconclusive"
+  },
+  "completed_at": 1791085846.454407
+}

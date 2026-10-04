@@ -1,0 +1,51 @@
+{
+  "incident_id": "incident-PodOOMKilled-1791084936",
+  "alert": {
+    "alertname": "PodOOMKilled",
+    "namespace": "incident-agent",
+    "severity": "critical",
+    "labels": {
+      "alertname": "PodOOMKilled",
+      "container": "cart",
+      "endpoint": "http",
+      "instance": "10.244.1.5:8080",
+      "job": "kube-state-metrics",
+      "namespace": "incident-agent",
+      "pod": "cart-644cb7ff5-qx4n5",
+      "prometheus": "monitoring/kube-prometheus-stack-prometheus",
+      "service": "kube-prometheus-stack-kube-state-metrics",
+      "severity": "critical",
+      "uid": "77833811-d085-4978-b554-9e833e1d57f3"
+    },
+    "summary": "Pod cart-644cb7ff5-qx4n5 was OOMKilled",
+    "description": "Container cart in pod cart-644cb7ff5-qx4n5 was killed for exceeding its memory limit.",
+    "root_cause_hint": "oom_kill",
+    "starts_at": "2026-10-04T03:35:26.698Z"
+  },
+  "result": {
+    "hypothesis": "The cart container in pod cart-644cb7ff5-qx4n5 is crashing due to excessive memory usage leading to an Out of Memory (OOM) kill event.",
+    "root_cause_label": "oom_kill",
+    "component": "cart",
+    "confidence": 0.9,
+    "evidence": [
+      {
+        "tool": "kube_list_pods",
+        "query": {},
+        "summary": "Pod cart-644cb7ff5-qx4n5 is in CrashLoopBackOff state with a restart count of 3."
+      },
+      {
+        "tool": "prometheus_query_instant",
+        "query": "container_memory_usage_bytes{kube_pod_name=~\"cart-644cb7ff5-qx4n5\"}",
+        "summary": "No memory usage data available for the pod cart-644cb7ff5-qx4n5."
+      },
+      {
+        "tool": "kube_list_events",
+        "query": {},
+        "summary": "Events show BackOff and Unhealthy messages, but no direct OOMKilled event found. However, the CrashLoopBackOff state strongly suggests memory issues."
+      }
+    ],
+    "proposed_action": null,
+    "status": "diagnosed"
+  },
+  "completed_at": 1791085074.131284
+}

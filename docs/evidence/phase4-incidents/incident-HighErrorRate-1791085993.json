@@ -1,0 +1,80 @@
+{
+  "incident_id": "incident-HighErrorRate-1791085993",
+  "alert": {
+    "alertname": "HighErrorRate",
+    "namespace": null,
+    "severity": "critical",
+    "labels": {
+      "alertname": "HighErrorRate",
+      "prometheus": "monitoring/kube-prometheus-stack-prometheus",
+      "service": "cart",
+      "severity": "critical"
+    },
+    "summary": "High HTTP error rate on cart",
+    "description": "cart is returning 5xx for more than 10% of requests over the last 2m.",
+    "root_cause_hint": "dependency_down_or_bad_deploy",
+    "starts_at": "2026-10-04T03:52:43.914Z"
+  },
+  "result": {
+    "hypothesis": "Investigation inconclusive: wallclock_timeout_s (480.0) reached",
+    "root_cause_label": null,
+    "component": null,
+    "confidence": 0.0,
+    "evidence": [
+      {
+        "tool": "kube_list_pods",
+        "query": {
+          "namespace": "default"
+        },
+        "summary": "error: Error executing tool kube_list_pods: failed to mint token for incident-agent-reader: error: failed to create token: serviceaccounts \"incident-agent-reader\" not found\n"
+      },
+      {
+        "tool": "prometheus_query_instant",
+        "query": {
+          "promql": "http_request_code_count{job=\"cart\", code=\"5..\"}"
+        },
+        "summary": "error: Error executing tool prometheus_query_instant: timed out"
+      },
+      {
+        "tool": "kube_list_deployments",
+        "query": {
+          "namespace": "default"
+        },
+        "summary": "error: Error executing tool kube_list_deployments: failed to mint token for incident-agent-reader: error: failed to create token: serviceaccounts \"incident-agent-reader\" not found\n"
+      },
+      {
+        "tool": "prometheus_query_instant",
+        "query": {
+          "promql": "http_request_code_count{job=\"cart\", code=\"5..\"}"
+        },
+        "summary": "error: Error executing tool prometheus_query_instant: Expecting value: line 1 column 1 (char 0)"
+      },
+      {
+        "tool": "search_pod_logs",
+        "query": {
+          "since_minutes": 30,
+          "namespace": "default",
+          "limit": 20
+        },
+        "summary": "error: Error executing tool search_pod_logs: Server disconnected without sending a response."
+      },
+      {
+        "tool": "kube_list_events",
+        "query": {
+          "namespace": "default"
+        },
+        "summary": "error: Error executing tool kube_list_events: failed to mint token for incident-agent-reader: error: failed to create token: serviceaccounts \"incident-agent-reader\" not found\n"
+      },
+      {
+        "tool": "search_runbooks_tool",
+        "query": {
+          "query": "HighErrorRate cart 5xx"
+        },
+        "summary": "returned 3 results"
+      }
+    ],
+    "proposed_action": null,
+    "status": "inconclusive"
+  },
+  "completed_at": 1791086600.85201
+}

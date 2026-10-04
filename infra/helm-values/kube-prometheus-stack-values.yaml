@@ -41,7 +41,13 @@ alertmanager:
     receivers:
       - name: webhook-receiver
         webhook_configs:
+          # Dumb logger (used by fault scripts' wait_for_alert and
+          # infra/verify-phase1.sh) and the real agent orchestrator, which
+          # runs on the host (not in-cluster) and is reached via Docker
+          # Desktop's host.docker.internal DNS name.
           - url: http://webhook-receiver.incident-agent.svc.cluster.local:8080/alerts
+            send_resolved: true
+          - url: http://host.docker.internal:8010/webhook
             send_resolved: true
       # kube-prometheus-stack's default rules include a "Watchdog" heartbeat
       # alert that always fires, routed to a receiver literally named "null"
