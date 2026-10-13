@@ -22,6 +22,9 @@ def _esc(value) -> str:
     return html.escape(str(value)) if value is not None else ""
 
 
+_STATUS_CLASS = {"pending": "pending", "approved": "ok", "rejected": "bad"}
+
+
 def _proposal_card(p: dict) -> str:
     """Render one proposal (as returned by the executor's /proposals API)
     as an HTML card: pending proposals get Approve/Reject buttons that
@@ -29,15 +32,15 @@ def _proposal_card(p: dict) -> str:
     decided proposals show their outcome instead (including whether an
     approved action actually executed, since approval and execution are
     separate steps on the executor side)."""
-    status_color = {"pending": "#b58900", "approved": "#2aa198", "rejected": "#dc322f"}.get(p["status"], "#657b83")
+    status_class = _STATUS_CLASS.get(p["status"], "unprocessed")
     actions_html = ""
     if p["status"] == "pending":
         actions_html = f"""
-        <form method="post" action="/approve/{p['id']}" style="display:inline">
-          <button type="submit" style="background:#2aa198;color:white;border:none;padding:6px 14px;border-radius:4px;cursor:pointer">Approve</button>
+        <form method="post" action="/approve/{p['id']}" class="inline-form">
+          <button type="submit" class="btn btn-ok">Approve</button>
         </form>
-        <form method="post" action="/reject/{p['id']}" style="display:inline;margin-left:8px">
-          <button type="submit" style="background:#dc322f;color:white;border:none;padding:6px 14px;border-radius:4px;cursor:pointer">Reject</button>
+        <form method="post" action="/reject/{p['id']}" class="inline-form">
+          <button type="submit" class="btn btn-bad">Reject</button>
         </form>
         """
     else:
@@ -45,7 +48,7 @@ def _proposal_card(p: dict) -> str:
         if p["status"] == "approved":
             exec_note = (f"executed: {_esc(p['execution_result'])}" if p["executed"]
                          else f"approved but refused at execution: {_esc(p['execution_error'])}")
-        actions_html = f"<em>{_esc(p['status'])}</em> &mdash; {exec_note}"
+        actions_html = f"<span class='outcome'><em>{_esc(p['status'])}</em> &mdash; {exec_note}</span>"
 
     evidence_rows = "".join(
         f"<li><b>{_esc(e.get('tool'))}</b>: {_esc(e.get('summary'))}</li>"
@@ -53,18 +56,18 @@ def _proposal_card(p: dict) -> str:
     )
 
     return f"""
-    <div style="border:1px solid #ddd;border-radius:6px;padding:16px;margin-bottom:16px">
-      <div style="display:flex;justify-content:space-between">
-        <h3 style="margin:0">{_esc(p['alert'].get('alertname', p['incident_id']))}</h3>
-        <span style="color:{status_color};font-weight:bold">{_esc(p['status']).upper()}</span>
+    <div class="card">
+      <div class="card-head">
+        <h3>{_esc(p['alert'].get('alertname', p['incident_id']))}</h3>
+        <span class="badge badge-{status_class}">{_esc(p['status']).upper()}</span>
       </div>
       <p><b>Incident:</b> {_esc(p['incident_id'])}</p>
       <p><b>Hypothesis:</b> {_esc(p['hypothesis'])}</p>
-      <p><b>Root cause:</b> {_esc(p['root_cause_label'])} (confidence {_esc(p['confidence'])})</p>
+      <p><b>Root cause:</b> {_esc(p['root_cause_label'])} <span class="muted">(confidence {_esc(p['confidence'])})</span></p>
       <p><b>Proposed action:</b> <code>{_esc(p['action'])}</code> on <code>{_esc(p['target'])}</code>
          {f"with params {_esc(p['params'])}" if p.get('params') else ""}</p>
       {f"<ul>{evidence_rows}</ul>" if evidence_rows else ""}
-      <div style="margin-top:8px">{actions_html}</div>
+      <div class="card-actions">{actions_html}</div>
     </div>
     """
 
@@ -80,13 +83,124 @@ async def index():
         resp.raise_for_status()
         proposals = resp.json()["proposals"]
 
-    cards = "".join(_proposal_card(p) for p in proposals) or "<p>No proposals yet.</p>"
+    cards = "".join(_proposal_card(p) for p in proposals) or "<p class='muted'>No proposals yet.</p>"
     return f"""
     <html>
-    <head><title>incident-agent approvals</title></head>
-    <body style="font-family:sans-serif;max-width:800px;margin:40px auto;padding:0 20px">
+    <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>incident-agent approvals</title>
+    <style>
+      :root {{
+        --bg: #f6f7f9;
+        --surface: #fafbfc;
+        --border: #e2e5ea;
+        --text: #1a1d23;
+        --text-muted: #6b7280;
+        --ok: #16876e;
+        --ok-bg: #e4f7f1;
+        --bad: #c23b3b;
+        --bad-bg: #fcebeb;
+        --pending: #b5830a;
+        --pending-bg: #fdf3e0;
+        --neutral: #6b7280;
+        --neutral-bg: #eceef1;
+        --radius: 10px;
+        --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+      }}
+      @media (prefers-color-scheme: dark) {{
+        :root {{
+          --bg: #10131a;
+          --surface: #1c212c;
+          --border: #2a2f3a;
+          --text: #e6e8ec;
+          --text-muted: #8b93a3;
+          --ok: #3ddba6;
+          --ok-bg: #123029;
+          --bad: #ff6b6b;
+          --bad-bg: #351b1c;
+          --pending: #f0b94d;
+          --pending-bg: #352b14;
+          --neutral: #9aa3b2;
+          --neutral-bg: #242a35;
+          --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.4);
+        }}
+      }}
+      * {{ box-sizing: border-box; }}
+      body {{
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 32px 20px 60px;
+        line-height: 1.5;
+      }}
+      h1 {{ margin: 0 0 6px; font-size: 1.4rem; letter-spacing: -0.01em; }}
+      p.intro {{ color: var(--text-muted); margin: 0 0 28px; font-size: 0.92em; }}
+      .muted {{ color: var(--text-muted); }}
+      .card {{
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: 18px 20px;
+        margin-bottom: 16px;
+      }}
+      .card h3 {{ margin: 0; font-size: 1.02rem; }}
+      .card p {{ margin: 8px 0; font-size: 0.92em; }}
+      .card-head {{
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: space-between;
+        align-items: center;
+      }}
+      .card code {{
+        background: var(--neutral-bg);
+        border-radius: 4px;
+        padding: 1px 6px;
+        font-size: 0.92em;
+      }}
+      .card ul {{ margin: 6px 0; padding-left: 20px; font-size: 0.9em; }}
+      .card-actions {{ margin-top: 12px; }}
+      .inline-form {{ display: inline; }}
+      .outcome {{ font-size: 0.9em; color: var(--text-muted); }}
+      .badge {{
+        display: inline-block;
+        padding: 3px 12px;
+        border-radius: 999px;
+        font-size: 0.75em;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+      }}
+      .badge-ok {{ background: var(--ok-bg); color: var(--ok); }}
+      .badge-bad {{ background: var(--bad-bg); color: var(--bad); }}
+      .badge-pending {{ background: var(--pending-bg); color: var(--pending); }}
+      .badge-unprocessed {{ background: var(--neutral-bg); color: var(--neutral); }}
+      .btn {{
+        border: none;
+        padding: 7px 16px;
+        border-radius: 6px;
+        cursor: pointer;
+        color: white;
+        margin-right: 8px;
+        font-size: 0.86em;
+        font-weight: 600;
+      }}
+      .btn-ok {{ background: var(--ok); }}
+      .btn-bad {{ background: var(--bad); }}
+      .btn:hover {{ filter: brightness(1.08); }}
+      @media (max-width: 600px) {{
+        body {{ padding: 20px 14px 48px; }}
+        .card {{ padding: 14px 16px; }}
+      }}
+    </style>
+    </head>
+    <body>
       <h1>Incident Agent &mdash; Approval Queue</h1>
-      <p style="color:#657b83">Proposals are read-only suggestions from the agent. Nothing executes until you click Approve.</p>
+      <p class="intro">Proposals are read-only suggestions from the agent. Nothing executes until you click Approve.</p>
       {cards}
     </body>
     </html>

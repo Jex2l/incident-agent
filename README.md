@@ -2,6 +2,14 @@
 
 An on-call incident triage agent: it receives Prometheus/Alertmanager alerts from a local Kubernetes cluster, investigates using read-only tools (PromQL, log search, kubectl, runbooks), and outputs a root-cause hypothesis with linked evidence plus a proposed remediation. Any write action requires explicit human approval and runs through a separate executor service. Entirely free and open source — local LLM via Ollama, local kind cluster, no paid APIs or cloud.
 
+## Contents
+
+- [Why](#why)
+- [Quickstart](#quickstart)
+- [Architecture](#architecture)
+- [Project structure](#project-structure)
+- [What's actually been verified](#whats-actually-been-verified)
+
 ## Why
 
 On-call engineers spend the first several minutes of every incident doing the same mechanical investigation: check the alert, look at a dashboard, grep some logs, check recent deploys. That repetition is exactly what pushes MTTR up and burns people out under alert fatigue — not because the work is hard, but because it's slow and repetitive *before* the hard part even starts. This project builds an agent that automates that first pass: producing a hypothesis with linked evidence a human can verify in seconds, not minutes, while keeping every write action behind explicit human approval and infrastructure-enforced (not prompt-enforced) read-only access for the investigation itself.
@@ -70,6 +78,19 @@ flowchart LR
 ```
 
 Safety is enforced by infrastructure, not prompts: the agent's `kube_read` tool authenticates as a dedicated Kubernetes ServiceAccount with a read-only Role (no secrets, no write verbs) — verified directly by attempting a real `delete`/`patch`/secrets-read through that exact client and confirming the API server returns 403, not by checking the tool's own code lacks those methods (`tests/test_kube_read.py`). Write actions exist only in a separate executor service (its own process, its own port) behind an approval API, a small action allowlist re-checked at execution time, and an append-only JSONL audit log.
+
+## Project structure
+
+- **`agent/`** — the investigation loop itself: `webhook.py` receives Alertmanager webhooks and kicks off an investigation, `orchestrator.py` runs the step-by-step tool-calling loop under budgets, `llm.py` wraps the local Ollama model, `mcp_client.py` talks to the MCP tool servers, `prompts.py` and `schema.py` hold the prompt and the structured-output schema the agent's conclusion is validated against, and `budgets.py`/`tracing.py` handle step/token/wallclock limits and OpenTelemetry spans.
+- **`tools/`** — the four read-only MCP tools the agent investigates with: `prometheus_query.py`, `log_search.py`, `kube_read.py` (the restricted ServiceAccount client), and `runbook_search.py`, plus shared helpers in `common.py`.
+- **`executor/`** — the only service with write-capable credentials: `app.py` exposes the approval API (propose/approve/reject/execute), `allowlist.py` re-checks every action against a small allowlist at execution time regardless of what was approved, and `store.py` persists proposals and the append-only audit log.
+- **`dashboard/`** — a single-page operator dashboard (`app.py`) aggregating active Alertmanager alerts, live pod status (via `kubectl`, operator-level access), in-progress and completed agent investigations, and pending executor approvals — with Approve/Reject right on the page. Read-mostly; talks to the agent/executor only over HTTP.
+- **`ui/`** — the minimal approval queue UI (`app.py`): lists pending/decided remediation proposals from the executor with Approve/Reject forms. Same relay-only role as `dashboard/`, just scoped to approvals rather than the full operator view (see note on overlap below).
+- **`faults/`** — the fault injectors used to generate real incidents: `oom_kill.py`, `bad_deploy.py`, `cpu_throttle.py`, `crash_loop.py`, `dependency_down.py`, `kafka_lag.py` (one per scenario, each injects/waits/resets), `lib.py` with shared kubectl helpers, and `run_all.py` to run the full suite.
+- **`evals/`** — the eval harness: `runner.py` drives a fault + alert + investigation end-to-end per scenario, `scorer.py` and `judge.py` score the result against ground truth, `baseline.py` holds the comparison baseline, `scenarios.yaml`/`scenarios/` define the scenario set, and `report.md`/`results.json` are the harness's own output (`make eval`).
+- **`runbooks/`** — the Markdown runbooks (`oom-kill.md`, `bad-deploy.md`, `cpu-throttling.md`, `crash-loop-bad-config.md`, `dependency-down.md`, `kafka-consumer-lag.md`, plus `high-error-rate.md`/`high-latency.md`) that `tools/runbook_search.py` searches over during an investigation — one of the agent's four evidence sources alongside metrics, logs, and cluster state.
+
+`dashboard/app.py` and `ui/app.py` are independent FastAPI processes rather than a shared library, so some code (an `_esc()` HTML-escape helper, the approve/reject relay routes, card markup) is duplicated between them by design — each is its own deployable service, not a shared import.
 
 ## What's actually been verified
 

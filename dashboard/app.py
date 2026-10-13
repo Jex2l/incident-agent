@@ -272,31 +272,173 @@ async def _build_state_html() -> dict:
 _PAGE_TEMPLATE = """
 <html>
 <head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>incident-agent dashboard</title>
 <style>
-  body {{ font-family: -apple-system, sans-serif; max-width: 1000px; margin: 30px auto; padding: 0 20px; color: #1a1a1a; }}
-  h1 {{ margin-bottom: 4px; }}
-  h2 {{ margin-top: 36px; border-bottom: 1px solid #ddd; padding-bottom: 6px; }}
-  .muted {{ color: #777; font-size: 0.9em; }}
-  .links a {{ margin-right: 14px; font-size: 0.9em; }}
-  table {{ width: 100%; border-collapse: collapse; margin-top: 8px; }}
-  th, td {{ text-align: left; padding: 6px 8px; border-bottom: 1px solid #eee; font-size: 0.92em; }}
-  .card {{ border: 1px solid #ddd; border-radius: 6px; padding: 14px 16px; margin-bottom: 14px; }}
-  .card-head {{ display: flex; justify-content: space-between; align-items: center; }}
-  .badge {{ padding: 2px 10px; border-radius: 10px; font-size: 0.75em; font-weight: bold; color: white; }}
-  .badge-active, .badge-bad {{ background: #dc322f; }}
-  .badge-pending {{ background: #b58900; }}
-  .badge-ok {{ background: #2aa198; }}
-  .badge-unprocessed {{ background: #999; }}
-  .btn {{ border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; color: white; margin-right: 8px; }}
-  .btn-ok {{ background: #2aa198; }}
-  .btn-bad {{ background: #dc322f; }}
-  #updated {{ font-size: 0.8em; color: #aaa; }}
+  :root {{
+    --bg: #f6f7f9;
+    --surface: #ffffff;
+    --surface-2: #fafbfc;
+    --border: #e2e5ea;
+    --text: #1a1d23;
+    --text-muted: #6b7280;
+    --accent: #3b5bdb;
+    --accent-weak: #eef1fd;
+    --ok: #16876e;
+    --ok-bg: #e4f7f1;
+    --bad: #c23b3b;
+    --bad-bg: #fcebeb;
+    --pending: #b5830a;
+    --pending-bg: #fdf3e0;
+    --neutral: #6b7280;
+    --neutral-bg: #eceef1;
+    --radius: 10px;
+    --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+  }}
+  @media (prefers-color-scheme: dark) {{
+    :root {{
+      --bg: #10131a;
+      --surface: #171b24;
+      --surface-2: #1c212c;
+      --border: #2a2f3a;
+      --text: #e6e8ec;
+      --text-muted: #8b93a3;
+      --accent: #7f9bff;
+      --accent-weak: #1e2740;
+      --ok: #3ddba6;
+      --ok-bg: #123029;
+      --bad: #ff6b6b;
+      --bad-bg: #351b1c;
+      --pending: #f0b94d;
+      --pending-bg: #352b14;
+      --neutral: #9aa3b2;
+      --neutral-bg: #242a35;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.4);
+    }}
+  }}
+  * {{ box-sizing: border-box; }}
+  body {{
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 28px 20px 60px;
+    line-height: 1.5;
+  }}
+  header {{
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 4px;
+  }}
+  h1 {{ margin: 0; font-size: 1.5rem; letter-spacing: -0.01em; }}
+  h2 {{
+    margin: 0 0 12px;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--text);
+  }}
+  .muted {{ color: var(--text-muted); font-size: 0.85em; }}
+  .links {{ margin: 10px 0 28px; display: flex; flex-wrap: wrap; gap: 4px 16px; }}
+  .links a {{
+    color: var(--accent);
+    font-size: 0.85em;
+    text-decoration: none;
+    font-weight: 500;
+  }}
+  .links a:hover {{ text-decoration: underline; }}
+  section {{ margin-bottom: 32px; }}
+  section > .panel {{
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 18px 20px;
+  }}
+  table {{ width: 100%; border-collapse: collapse; }}
+  th, td {{
+    text-align: left;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.88em;
+  }}
+  th {{
+    color: var(--text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 0.72em;
+    letter-spacing: 0.04em;
+  }}
+  tr:last-child td {{ border-bottom: none; }}
+  .card {{
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    margin-bottom: 12px;
+  }}
+  .card:last-child {{ margin-bottom: 0; }}
+  .card-head {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+  }}
+  .card-head b {{ font-size: 0.98em; }}
+  .card ul {{ margin: 8px 0 0; padding-left: 20px; font-size: 0.9em; }}
+  .card li {{ margin-bottom: 2px; }}
+  .card code {{
+    background: var(--neutral-bg);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 0.92em;
+  }}
+  .badge {{
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 0.72em;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    line-height: 1.6;
+  }}
+  .badge-active, .badge-bad, .badge-firing {{ background: var(--bad-bg); color: var(--bad); }}
+  .badge-pending {{ background: var(--pending-bg); color: var(--pending); }}
+  .badge-ok, .badge-diagnosed, .badge-resolved {{ background: var(--ok-bg); color: var(--ok); }}
+  .badge-unprocessed, .badge-suppressed {{ background: var(--neutral-bg); color: var(--neutral); }}
+  .btn {{
+    border: none;
+    padding: 7px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    color: white;
+    margin-right: 8px;
+    font-size: 0.86em;
+    font-weight: 600;
+  }}
+  .btn-ok {{ background: var(--ok); }}
+  .btn-bad {{ background: var(--bad); }}
+  .btn:hover {{ filter: brightness(1.08); }}
+  #updated {{ font-size: 0.8em; color: var(--text-muted); }}
+  @media (max-width: 640px) {{
+    body {{ padding: 18px 14px 48px; }}
+    table, thead, tbody, th, td, tr {{ font-size: 0.82em; }}
+    section > .panel {{ padding: 14px 14px; }}
+  }}
 </style>
 </head>
 <body>
-  <h1>Incident Agent &mdash; Dashboard</h1>
-  <p class="muted">Auto-refreshes every {interval}s. <span id="updated"></span></p>
+  <header>
+    <h1>Incident Agent &mdash; Dashboard</h1>
+    <p class="muted">Auto-refreshes every {interval}s &middot; <span id="updated"></span></p>
+  </header>
   <p class="links">
     Deep dives when the summary below isn't enough:
     <a href="{grafana}" target="_blank">Grafana</a>
@@ -305,17 +447,25 @@ _PAGE_TEMPLATE = """
     <a href="{trace_viewer}" target="_blank">Trace viewer</a>
   </p>
 
-  <h2>Active alerts</h2>
-  <div id="alerts">{alerts_html}</div>
+  <section>
+    <h2>Active alerts</h2>
+    <div class="panel" id="alerts">{alerts_html}</div>
+  </section>
 
-  <h2>Pod status &mdash; {namespace}</h2>
-  <div id="pods">{pods_html}</div>
+  <section>
+    <h2>Pod status &mdash; {namespace}</h2>
+    <div class="panel" id="pods">{pods_html}</div>
+  </section>
 
-  <h2>Investigations</h2>
-  <div id="investigations">{investigations_html}</div>
+  <section>
+    <h2>Investigations</h2>
+    <div class="panel" id="investigations">{investigations_html}</div>
+  </section>
 
-  <h2>Pending approvals</h2>
-  <div id="proposals">{proposals_html}</div>
+  <section>
+    <h2>Pending approvals</h2>
+    <div class="panel" id="proposals">{proposals_html}</div>
+  </section>
 
 <script>
 async function refresh() {{
